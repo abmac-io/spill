@@ -1,0 +1,14 @@
+[package]
+name = "spill-ring-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Core implementation for spill_ring"
+
+[features]
+default = []
+no-atomics = []
+
+[dependencies]
+
+[dev-dependencies]

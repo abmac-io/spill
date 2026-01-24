@@ -1,5 +1,8 @@
+[workspace]
+members = [".", "spill-ring-core", "spill-ring-macros"]
+
 [package]
-name = "spill_ring"
+name = "spill-ring"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -12,9 +15,11 @@ readme = "README.md"
 
 [features]
 default = []
-# Use Cell instead of atomics for single-context embedded systems
-no-atomics = []
+no-atomics = ["spill-ring-core/no-atomics"]
+macros = ["spill-ring-macros"]
 
 [dependencies]
+spill-ring-core = { path = "spill-ring-core" }
+spill-ring-macros = { path = "spill-ring-macros", optional = true }
 
 [dev-dependencies]

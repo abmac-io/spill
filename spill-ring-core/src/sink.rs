@@ -5,7 +5,7 @@ pub trait Sink<T> {
     /// Consume an item.
     fn send(&mut self, item: T);
 
-    /// Flush buffered data. Called on drop.
+    /// Flush buffered data.
     #[inline]
     fn flush(&mut self) {}
 }
@@ -75,12 +75,6 @@ impl<F: FnMut()> Flush for F {
 }
 
 /// Create a sink from closures.
-///
-/// ```
-/// use spill_ring::sink;
-///
-/// let mut s = sink(|x: i32| println!("{}", x), || println!("flush"));
-/// ```
 pub fn sink<T, S, F>(send: S, flush: F) -> impl Sink<T>
 where
     S: FnMut(T),
