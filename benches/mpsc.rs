@@ -1,10 +1,12 @@
 //! MPSC (Multiple-Producer, Single-Consumer) benchmarks.
 //!
 //! Zero-overhead MPSC: each producer owns its own ring, no shared state.
-//! Run with `--features no-atomics` for maximum performance.
+//! Runs with the default (non-atomic) configuration for maximum performance.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use spill_ring::{CollectSink, MpscRing, ProducerSink, Sink, SpillRing, collect_producers};
+use spill_ring::{
+    CollectSink, DropSink, MpscRing, ProducerSink, RingInfo, Sink, SpillRing, collect_producers,
+};
 use std::{
     sync::{
         Arc,
@@ -84,7 +86,9 @@ fn mpsc_full_cycle(c: &mut Criterion) {
                     });
 
                     collect_producers(finished_producers, &mut consumer);
-                    black_box(consumer.drain().count())
+                    let mut sink = CollectSink::new();
+                    consumer.drain(&mut sink);
+                    black_box(sink.into_items().len())
                 })
             },
         );
@@ -134,7 +138,9 @@ fn mpsc_vs_single(c: &mut Criterion) {
             });
 
             collect_producers(finished, &mut consumer);
-            black_box(consumer.drain().count())
+            let mut sink = CollectSink::new();
+            consumer.drain(&mut sink);
+            black_box(sink.into_items().len())
         })
     });
 
@@ -177,7 +183,7 @@ fn mpsc_scaling(c: &mut Criterion) {
                     });
 
                     collect_producers(finished, &mut consumer);
-                    black_box(consumer.total_len())
+                    black_box(consumer.len())
                 })
             },
         );
@@ -219,7 +225,9 @@ fn producer_sink_overhead(c: &mut Criterion) {
             });
 
             collect_producers(finished, &mut consumer);
-            black_box(consumer.drain().count())
+            let count = consumer.len();
+            consumer.drain(&mut DropSink);
+            black_box(count)
         })
     });
 
@@ -284,7 +292,9 @@ fn producer_sink_overhead(c: &mut Criterion) {
             });
 
             collect_producers(finished, &mut consumer);
-            black_box(consumer.drain().count())
+            let count = consumer.len();
+            consumer.drain(&mut DropSink);
+            black_box(count)
         })
     });
 
@@ -311,7 +321,9 @@ fn producer_sink_overhead(c: &mut Criterion) {
             });
 
             collect_producers(finished, &mut consumer);
-            black_box(consumer.drain().count())
+            let count = consumer.len();
+            consumer.drain(&mut DropSink);
+            black_box(count)
         })
     });
 

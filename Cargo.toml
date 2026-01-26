@@ -16,7 +16,7 @@ readme = "README.md"
 [features]
 default = []
 std = ["spill-ring-core/std"]
-no-atomics = ["spill-ring-core/no-atomics"]
+atomics = ["spill-ring-core/atomics"]
 macros = ["spill-ring-macros"]
 
 [dependencies]
@@ -39,6 +39,7 @@ harness = false
 [[bench]]
 name = "spsc"
 harness = false
+required-features = ["atomics"]
 
 [[bench]]
 name = "comparison"
@@ -47,3 +48,7 @@ harness = false
 [[bench]]
 name = "mpsc"
 harness = false
+
+[[example]]
+name = "compio_file_copy"
+required-features = ["atomics"]

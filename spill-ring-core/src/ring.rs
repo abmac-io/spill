@@ -1,6 +1,6 @@
 //! Ring buffer with overflow spilling to a sink.
 
-#[cfg(not(feature = "no-atomics"))]
+#[cfg(feature = "atomics")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{cell::UnsafeCell, mem::MaybeUninit};
 
@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Slot wrapper with seqlock for safe concurrent access.
-#[cfg(not(feature = "no-atomics"))]
+#[cfg(feature = "atomics")]
 pub(crate) struct Slot<T> {
     /// Sequence number: odd = operation in progress, even = slot is free.
     /// Used to coordinate access between producer and consumer on the same slot.
@@ -20,7 +20,7 @@ pub(crate) struct Slot<T> {
     pub(crate) data: UnsafeCell<MaybeUninit<T>>,
 }
 
-#[cfg(not(feature = "no-atomics"))]
+#[cfg(feature = "atomics")]
 impl<T> Slot<T> {
     const fn new() -> Self {
         Self {
@@ -31,12 +31,12 @@ impl<T> Slot<T> {
 }
 
 /// Slot wrapper without seqlock for single-threaded use.
-#[cfg(feature = "no-atomics")]
+#[cfg(not(feature = "atomics"))]
 pub(crate) struct Slot<T> {
     pub(crate) data: UnsafeCell<MaybeUninit<T>>,
 }
 
-#[cfg(feature = "no-atomics")]
+#[cfg(not(feature = "atomics"))]
 impl<T> Slot<T> {
     const fn new() -> Self {
         Self {
@@ -55,7 +55,7 @@ pub struct SpillRing<T, const N: usize, S: Sink<T> = DropSink> {
 
 unsafe impl<T: Send, const N: usize, S: Sink<T> + Send> Send for SpillRing<T, N, S> {}
 
-#[cfg(not(feature = "no-atomics"))]
+#[cfg(feature = "atomics")]
 unsafe impl<T: Send, const N: usize, S: Sink<T> + Send> Sync for SpillRing<T, N, S> {}
 
 /// Maximum supported capacity (2^20 = ~1 million slots).
@@ -102,7 +102,7 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
     ///
     /// When the buffer is full, the oldest item is evicted to the sink.
     #[inline]
-    #[cfg(not(feature = "no-atomics"))]
+    #[cfg(feature = "atomics")]
     pub fn push(&self, item: T) {
         // Load current tail (only producer modifies tail, so relaxed is fine)
         let tail = self.tail.load_relaxed();
@@ -201,7 +201,7 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
     /// Push an item. If full, evicts oldest to sink.
     /// (Non-atomic version for single-threaded use)
     #[inline]
-    #[cfg(feature = "no-atomics")]
+    #[cfg(not(feature = "atomics"))]
     pub fn push(&self, item: T) {
         let tail = self.tail.load_relaxed();
         let idx = tail % N;
@@ -250,7 +250,7 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
     /// Multiple concurrent pushes or multiple concurrent pops are NOT safe.
     #[inline]
     #[must_use]
-    #[cfg(not(feature = "no-atomics"))]
+    #[cfg(feature = "atomics")]
     pub fn pop(&self) -> Option<T> {
         loop {
             let head = self.head.load();
@@ -312,7 +312,7 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
     /// Pop the oldest item. (Non-atomic version)
     #[inline]
     #[must_use]
-    #[cfg(feature = "no-atomics")]
+    #[cfg(not(feature = "atomics"))]
     pub fn pop(&self) -> Option<T> {
         let head = self.head.load();
         let tail = self.tail.load();

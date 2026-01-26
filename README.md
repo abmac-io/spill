@@ -60,13 +60,14 @@ for i in 1..=10 {
 - Custom sinks via the `Sink` trait
 
 **Thread Safety**
-- Lock-free SPSC (single-producer, single-consumer) when using atomics
-- One thread pushes, another pops, no mutex needed
-- Interior mutability via atomics and seqlock coordination
+- Default: single-threaded, maximum performance (~5 billion elem/sec)
+- `atomics` feature: lock-free SPSC (single-producer, single-consumer)
+- `MpscRing`: zero-contention multi-producer support
 
 **No-Std Support**
 - Works in embedded environments (requires `alloc` for some sinks)
-- `no-atomics` feature for single-context systems using `Cell`
+- Default uses `Cell` for maximum performance
+- `atomics` feature enables thread-safe SPSC access
 
 **Zero-Copy Custom Serialization**
 - Built-in `ToBytes`/`FromBytes` traits for primitive types
@@ -81,18 +82,19 @@ for i in 1..=10 {
 spill-ring = "0.1"
 ```
 
-For embedded systems without atomics:
+For SPSC (single-producer, single-consumer) thread-safe access:
 
 ```toml
 [dependencies]
-spill-ring = { version = "0.1", features = ["no-atomics"] }
+spill-ring = { version = "0.1", features = ["atomics"] }
 ```
 
 ## Thread Safety
 
-SpillRing is safe for single-producer, single-consumer (SPSC) concurrent use:
+By default, SpillRing is single-threaded for maximum performance. Enable the `atomics` feature for SPSC (single-producer, single-consumer) concurrent use:
 
 ```rust
+// Requires: spill-ring = { version = "0.1", features = ["atomics"] }
 use std::sync::Arc;
 use std::thread;
 use spill_ring::SpillRing;
@@ -115,7 +117,7 @@ thread::spawn(move || {
 });
 ```
 
-For multiple producers, use `MpscRing` for zero-overhead multi-producer support.
+For multiple producers, use `MpscRing` for zero-contention multi-producer support (no `atomics` feature needed).
 
 ## Multiple Producers (MPSC)
 
@@ -148,50 +150,41 @@ let finished: Vec<_> = thread::scope(|s| {
 
 // Merge producers back and drain all items
 collect_producers(finished, &mut consumer);
-for item in consumer.drain() {
-    // Process items (order across producers not guaranteed)
-}
+let mut sink = CollectSink::new();
+consumer.drain(&mut sink);
+// Process items (order across producers not guaranteed)
 ```
 
  This pattern is ideal for large items where parallel cache loading outweighs coordination overhead.
 
 ## Performance
 
-SpillRing has two modes with different performance characteristics.
-
 **Benchmarks** (AMD Ryzen 7 7840U, Linux 6.18, Rust 1.85):
 
 | Mode | Push Throughput | Use Case |
 |------|-----------------|----------|
-| Default (atomics) | 193 million elem/sec | SPSC concurrent access |
-| `no-atomics` feature | 4.6 billion elem/sec | Single-threaded |
+| Default | 5.5 billion elem/sec | Single-threaded (maximum performance) |
+| `atomics` feature | 229 million elem/sec | SPSC concurrent access |
 
-The default mode uses atomic operations and a seqlock for thread-safe SPSC access. This adds overhead compared to single-threaded use.
-
-For single-threaded applications, enable `no-atomics` for ~20x better throughput:
-
-```toml
-[dependencies]
-spill-ring = { version = "0.1", features = ["no-atomics"] }
-```
+The default mode uses `Cell` for single-threaded access with no atomic overhead. Enable `atomics` when you need thread-safe SPSC access.
 
 **Comparison to VecDeque:**
 
 | Implementation | Push Throughput |
 |----------------|-----------------|
-| SpillRing (no-atomics) | 4.6 billion elem/sec |
-| VecDeque (manual eviction) | 632 million elem/sec |
-| SpillRing (atomics) | 193 million elem/sec |
+| SpillRing (default) | 5.5 billion elem/sec |
+| VecDeque (manual eviction) | 765 million elem/sec |
+| SpillRing (atomics) | 229 million elem/sec |
 
-SpillRing's power-of-two capacity enables fast bitwise modulo, making the `no-atomics` version faster than `VecDeque` with equivalent eviction logic.
+SpillRing's power-of-two capacity enables fast bitwise modulo, making the default version ~7x faster than `VecDeque` with equivalent eviction logic.
 
-**Cache effects** (50k push operations):
+**Cache effects** (50k push operations, default mode):
 
 | Capacity | Throughput | Notes |
 |----------|------------|-------|
-| 16 | 192 million elem/sec | Fits L1 cache |
-| 4096 | 177 million elem/sec | L2 cache |
-| 65536 | 141 million elem/sec | L3 cache |
+| 16 | 5.5 billion elem/sec | Fits L1 cache |
+| 4096 | 5.2 billion elem/sec | L2 cache |
+| 65536 | 4.8 billion elem/sec | L3 cache |
 
 Run benchmarks locally: `cargo bench`
 

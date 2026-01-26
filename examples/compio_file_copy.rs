@@ -8,7 +8,7 @@
 //! Performance: ~1.9 GB/s on NVMe (vs ~260 MB/s with sequential read-then-write)
 //!
 //! Run with:
-//!   cargo run --example compio_file_copy --features std --release -- input.bin output.bin
+//!   cargo run --example compio_file_copy --features std,atomics --release -- input.bin output.bin
 //!
 //! Create test file:
 //!   dd if=/dev/urandom of=input.bin bs=1M count=1024

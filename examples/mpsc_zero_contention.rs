@@ -5,7 +5,7 @@
 //!
 //! Run with: cargo run --example mpsc_zero_contention
 
-use spill_ring::{FnFlushSink, MpscRing, ProducerSink, collect_producers};
+use spill_ring::{FnFlushSink, FnSink, MpscRing, ProducerSink, collect_producers};
 use std::{
     fs::File,
     io::{BufWriter, Write},
@@ -98,11 +98,12 @@ fn main() -> std::io::Result<()> {
     // Write drained items to a merge file
     let mut merge_file = BufWriter::new(File::create("mpsc_merged.bin")?);
 
-    for item in consumer.drain() {
+    let mut drain_sink = FnSink(|item: SensorReading| {
         let pid = item.sensor_id as usize;
-        merge_file.write_all(&item.to_bytes())?;
+        merge_file.write_all(&item.to_bytes()).unwrap();
         drain_counts[pid] += 1;
-    }
+    });
+    consumer.drain(&mut drain_sink);
     merge_file.flush()?;
 
     // Drop consumer to flush all sinks' BufWriters
