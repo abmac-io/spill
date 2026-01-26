@@ -647,7 +647,7 @@ mod channel_sink_tests {
 
 // Concurrency tests (only run with atomics feature)
 // SpillRing is SPSC (single-producer, single-consumer) safe with atomics.
-#[cfg(not(feature = "no-atomics"))]
+#[cfg(feature = "atomics")]
 mod concurrency {
     use super::*;
     use std::sync::Arc;

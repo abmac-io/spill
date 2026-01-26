@@ -2,7 +2,7 @@
 
 #![allow(clippy::mut_from_ref)]
 
-#[cfg(not(feature = "no-atomics"))]
+#[cfg(feature = "atomics")]
 mod atomic {
     use core::{
         cell::UnsafeCell,
@@ -78,7 +78,7 @@ mod atomic {
     unsafe impl<S: Send> Sync for SinkCell<S> {}
 }
 
-#[cfg(feature = "no-atomics")]
+#[cfg(not(feature = "atomics"))]
 mod non_atomic {
     use core::cell::{Cell, UnsafeCell};
 
@@ -139,8 +139,8 @@ mod non_atomic {
     unsafe impl<S: Send> Send for SinkCell<S> {}
 }
 
-#[cfg(not(feature = "no-atomics"))]
+#[cfg(feature = "atomics")]
 pub use atomic::{Index, SinkCell};
 
-#[cfg(feature = "no-atomics")]
+#[cfg(not(feature = "atomics"))]
 pub use non_atomic::{Index, SinkCell};

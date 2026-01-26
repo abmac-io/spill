@@ -164,7 +164,7 @@ fn main() -> std::io::Result<()> {
     collect_producers(finished_producers, &mut consumer);
 
     // Drain remaining items (what's left in rings) through the shared sink
-    consumer.drain_to_sink(&mut sink_ref.clone());
+    consumer.drain(&mut sink_ref.clone());
     sink_ref.flush_inner();
 
     println!("Results:");

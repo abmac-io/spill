@@ -26,12 +26,12 @@
 //!
 //! // Cold path: drain all to sink
 //! let mut sink = CollectSink::new();
-//! consumer.drain_to_sink(&mut sink);
+//! consumer.drain(&mut sink);
 //! ```
 
 extern crate alloc;
 
-use crate::{DropSink, Sink, SpillRing};
+use crate::{DropSink, RingInfo, Sink, SpillRing};
 use alloc::vec::Vec;
 
 /// A producer handle for an MPSC ring.
@@ -115,36 +115,29 @@ impl<T, const N: usize, S: Sink<T>> Consumer<T, N, S> {
         self.rings.push(ring);
     }
 
-    /// Drain all items from all rings.
+    /// Drain all items from all rings into a sink.
     ///
     /// Items are drained in producer order, then FIFO within each producer.
-    pub fn drain(&mut self) -> impl Iterator<Item = T> + '_ {
-        self.rings.iter_mut().flat_map(|r| r.drain())
-    }
-
-    /// Drain all items from all rings into a sink.
-    pub fn drain_to_sink<Sink2: Sink<T>>(&mut self, sink: &mut Sink2) {
+    pub fn drain<Sink2: Sink<T>>(&mut self, sink: &mut Sink2) {
         for ring in &mut self.rings {
-            for item in ring.drain() {
-                sink.send(item);
-            }
+            sink.send_all(ring.drain());
         }
         sink.flush();
-    }
-
-    /// Get the total number of items across all rings.
-    pub fn total_len(&self) -> usize {
-        self.rings.iter().map(|r| r.len()).sum()
     }
 
     /// Get the number of producers/rings.
     pub fn num_producers(&self) -> usize {
         self.rings.len()
     }
+}
 
-    /// Check if all rings are empty.
-    pub fn is_empty(&self) -> bool {
-        self.rings.iter().all(|r| r.is_empty())
+impl<T, const N: usize, S: Sink<T>> RingInfo for Consumer<T, N, S> {
+    fn len(&self) -> usize {
+        self.rings.iter().map(|r| r.len()).sum()
+    }
+
+    fn capacity(&self) -> usize {
+        self.rings.iter().map(|r| r.capacity()).sum()
     }
 }
 
@@ -246,7 +239,9 @@ mod tests {
 
         collect_producers(producers, &mut consumer);
 
-        let items: Vec<_> = consumer.drain().collect();
+        let mut sink = CollectSink::new();
+        consumer.drain(&mut sink);
+        let items = sink.into_items();
         assert_eq!(items.len(), 4);
         assert!(items.contains(&1));
         assert!(items.contains(&2));
@@ -255,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn drain_to_sink() {
+    fn drain() {
         let (producers, mut consumer) = MpscRing::<u64, 8>::new(2);
 
         let producers: Vec<_> = producers.into_iter().collect();
@@ -267,7 +262,7 @@ mod tests {
         collect_producers(producers, &mut consumer);
 
         let mut sink = CollectSink::new();
-        consumer.drain_to_sink(&mut sink);
+        consumer.drain(&mut sink);
 
         let items = sink.into_items();
         assert_eq!(items.len(), 3);
@@ -291,7 +286,9 @@ mod tests {
         collect_producers(producers, &mut consumer);
 
         // Consumer drains what's left in rings
-        let remaining: Vec<_> = consumer.drain().collect();
+        let mut sink = CollectSink::new();
+        consumer.drain(&mut sink);
+        let remaining = sink.into_items();
         assert_eq!(remaining.len(), 4); // Only last 4 fit in ring
     }
 
@@ -302,7 +299,7 @@ mod tests {
         collect_producers(producers, &mut consumer);
 
         assert!(consumer.is_empty());
-        assert_eq!(consumer.total_len(), 0);
+        assert_eq!(consumer.len(), 0);
         assert_eq!(consumer.num_producers(), 4);
     }
 
@@ -317,7 +314,9 @@ mod tests {
 
         collect_producers([producer], &mut consumer);
 
-        let items: Vec<_> = consumer.drain().collect();
+        let mut sink = CollectSink::new();
+        consumer.drain(&mut sink);
+        let items = sink.into_items();
         assert_eq!(items, vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     }
 }
