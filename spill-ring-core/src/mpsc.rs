@@ -244,6 +244,29 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     {
         WorkerPool::new(num_workers)
     }
+
+    /// Create a pre-warmed worker pool with persistent threads.
+    ///
+    /// This is the recommended API for maximum performance. Each thread owns
+    /// its own ring, cache is pre-warmed, and threads are ready before this
+    /// returns.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use spill_ring_core::MpscRing;
+    ///
+    /// let pool = MpscRing::<u64, 1024>::pooled(4);
+    /// pool.run(10_000); // Each worker pushes 10k items
+    /// let consumer = pool.into_consumer();
+    /// ```
+    #[cfg(feature = "std")]
+    pub fn pooled(num_workers: usize) -> WorkerPool<T, N, DropSink>
+    where
+        T: Send + 'static,
+    {
+        WorkerPool::new(num_workers)
+    }
 }
 
 impl<T, const N: usize, S: Sink<T> + Clone> MpscRing<T, N, S> {
