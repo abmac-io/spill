@@ -4,7 +4,7 @@
 //! relative to standard library alternatives.
 
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use spill_ring_core::SpillRing;
+use spill_ring::SpillRing;
 use std::collections::VecDeque;
 
 /// Compare push performance: SpillRing vs VecDeque.

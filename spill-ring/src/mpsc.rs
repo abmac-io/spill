@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```
-//! use spill_ring_core::{MpscRing, CollectSink, ProducerSink};
+//! use spill_ring::{MpscRing, CollectSink, ProducerSink};
 //! use std::thread;
 //!
 //! // Each producer gets its own CollectSink via ProducerSink factory
@@ -154,7 +154,7 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     /// # Example
     ///
     /// ```
-    /// use spill_ring_core::MpscRing;
+    /// use spill_ring::MpscRing;
     /// use std::thread;
     ///
     /// let producers = MpscRing::<u64, 256>::new(4);
@@ -183,7 +183,7 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     /// # Example
     ///
     /// ```
-    /// use spill_ring_core::{MpscRing, CollectSink, collect};
+    /// use spill_ring::{MpscRing, CollectSink, collect};
     /// use std::thread;
     ///
     /// let (producers, mut consumer) = MpscRing::<u64, 256>::with_consumer(4);
@@ -221,7 +221,7 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     /// # Example
     ///
     /// ```
-    /// use spill_ring_core::MpscRing;
+    /// use spill_ring::MpscRing;
     ///
     /// let pool = MpscRing::<u64, 1024>::pooled(4);
     /// pool.run(10_000); // Each worker pushes 10k items
@@ -245,7 +245,7 @@ impl<T, const N: usize, S: Sink<T> + Clone> MpscRing<T, N, S> {
     /// # Example
     ///
     /// ```
-    /// use spill_ring_core::{MpscRing, CollectSink, ProducerSink};
+    /// use spill_ring::{MpscRing, CollectSink, ProducerSink};
     ///
     /// // Each producer gets its own CollectSink
     /// let sink = ProducerSink::new(|_id| CollectSink::<u64>::new());

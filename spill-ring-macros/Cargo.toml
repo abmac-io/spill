@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 description = "Derive macros (ToBytes, FromBytes) for spill-ring serialization"
-repository = "https://github.com/GregBowyer/spill_ring"
+repository = "https://github.com/abmac-io/spill"
 keywords = ["derive", "serialization", "no_std", "macros"]
 categories = ["development-tools::procedural-macro-helpers", "no-std"]
 

@@ -149,7 +149,7 @@ where
 /// # Example
 ///
 /// ```
-/// use spill_ring_core::{SpillRing, ChannelSink};
+/// use spill_ring::{SpillRing, ChannelSink};
 /// use std::sync::mpsc;
 ///
 /// let (tx, rx) = mpsc::channel();
@@ -223,7 +223,7 @@ impl<T, S: Sink<T>> Sink<T> for std::sync::Arc<std::sync::Mutex<S>> {
 /// # Example
 ///
 /// ```
-/// use spill_ring_core::{ProducerSink, CollectSink, Sink};
+/// use spill_ring::{ProducerSink, CollectSink, Sink};
 ///
 /// // Factory creates independent CollectSinks for each producer
 /// let sink = ProducerSink::new(|producer_id| {
@@ -333,7 +333,7 @@ where
 /// # Example
 ///
 /// ```
-/// use spill_ring_core::{BatchSink, CollectSink, Sink};
+/// use spill_ring::{BatchSink, CollectSink, Sink};
 ///
 /// let mut sink = BatchSink::new(3, CollectSink::new());
 ///
@@ -430,7 +430,7 @@ impl<T, S: Sink<Vec<T>>> Sink<T> for BatchSink<T, S> {
 /// # Example
 ///
 /// ```
-/// use spill_ring_core::{ReduceSink, CollectSink, Sink};
+/// use spill_ring::{ReduceSink, CollectSink, Sink};
 ///
 /// // Sum batches of 4 items
 /// let mut sink = ReduceSink::new(4, |batch: Vec<i32>| batch.iter().sum::<i32>(), CollectSink::new());

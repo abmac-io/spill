@@ -894,7 +894,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spill-ring-core"
+name = "spill-ring"
 version = "1.0.0-rc.2"
 dependencies = [
  "compio",
