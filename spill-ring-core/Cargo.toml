@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 description = "Core no_std ring buffer with overflow-to-sink semantics"
-repository = "https://github.com/GregBowyer/spill_ring"
+repository = "https://github.com/abmac-io/spill-ring"
 keywords = ["ring-buffer", "no_std", "embedded", "lock-free"]
 categories = ["data-structures", "no-std", "embedded"]
 
@@ -13,8 +13,38 @@ categories = ["data-structures", "no-std", "embedded"]
 default = []
 std = []
 atomics = []
+macros = []
 
 [dependencies]
 snafu = { version = "0.8", default-features = false, features = ["rust_1_81"] }
 
 [dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+compio = { version = "0.17", features = ["macros"] }
+libc = "0.2"
+
+[[bench]]
+name = "throughput"
+harness = false
+
+[[bench]]
+name = "latency"
+harness = false
+
+[[bench]]
+name = "spsc"
+harness = false
+required-features = ["atomics"]
+
+[[bench]]
+name = "comparison"
+harness = false
+
+[[bench]]
+name = "mpsc"
+harness = false
+required-features = ["std"]
+
+[[example]]
+name = "compio_file_copy"
+required-features = ["atomics"]

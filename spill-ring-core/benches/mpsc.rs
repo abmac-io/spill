@@ -4,7 +4,7 @@
 //! Runs with the default (non-atomic) configuration for maximum performance.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use spill_ring::{CollectSink, DropSink, MpscRing, ProducerSink, Sink, SpillRing, collect};
+use spill_ring_core::{CollectSink, DropSink, MpscRing, ProducerSink, Sink, SpillRing, collect};
 use std::{
     sync::{
         Arc,
