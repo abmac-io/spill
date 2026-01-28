@@ -4,7 +4,7 @@
 //!
 //! Run with: cargo run --example spsc_file_sink
 
-use spill_ring_core::{FnFlushSink, SpillRing};
+use spill_ring::{FnFlushSink, SpillRing};
 use std::{
     cell::RefCell,
     fs::File,

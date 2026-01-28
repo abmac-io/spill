@@ -1,7 +1,7 @@
 //! Latency benchmarks - per-operation timing.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use spill_ring_core::SpillRing;
+use spill_ring::SpillRing;
 
 /// Benchmark single push latency when buffer has room.
 fn push_latency_not_full(c: &mut Criterion) {
