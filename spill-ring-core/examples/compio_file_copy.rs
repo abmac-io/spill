@@ -18,7 +18,7 @@ use compio::{
     fs::File,
     io::{AsyncReadAtExt, AsyncWriteAtExt},
 };
-use spill_ring::SpillRing;
+use spill_ring_core::SpillRing;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;

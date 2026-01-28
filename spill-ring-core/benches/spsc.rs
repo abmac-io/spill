@@ -1,7 +1,7 @@
 //! SPSC (Single-Producer, Single-Consumer) concurrent benchmarks.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use spill_ring::SpillRing;
+use spill_ring_core::SpillRing;
 use std::{sync::Arc, thread};
 
 /// Benchmark SPSC throughput with varying buffer sizes.

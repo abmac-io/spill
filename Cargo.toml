@@ -1,55 +1,7 @@
 [workspace]
-members = [".", "spill-ring-core", "spill-ring-macros"]
+resolver = "3"
+members = ["spill-ring-core", "spill-ring-macros"]
 
-[package]
-name = "spill-ring"
-version = "1.0.0-rc.2"
-edition = "2024"
-rust-version = "1.85"
-license = "MIT OR Apache-2.0"
-description = "A no_std ring buffer that spills overflow to a configurable sink"
-repository = "https://github.com/GregBowyer/spill_ring"
-keywords = ["ring-buffer", "no_std", "embedded", "sink"]
-categories = ["data-structures", "no-std", "embedded"]
-readme = "README.md"
+[workspace.package]
 
-[features]
-default = []
-std = ["spill-ring-core/std"]
-atomics = ["spill-ring-core/atomics"]
-macros = ["spill-ring-macros"]
-
-[dependencies]
-spill-ring-core = { path = "spill-ring-core", version = "1.0.0-rc.2" }
-spill-ring-macros = { path = "spill-ring-macros", version = "1.0.0-rc.2", optional = true }
-
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-compio = { version = "0.14", features = ["macros"] }
-libc = "0.2"
-
-[[bench]]
-name = "throughput"
-harness = false
-
-[[bench]]
-name = "latency"
-harness = false
-
-[[bench]]
-name = "spsc"
-harness = false
-required-features = ["atomics"]
-
-[[bench]]
-name = "comparison"
-harness = false
-
-[[bench]]
-name = "mpsc"
-harness = false
-required-features = ["std"]
-
-[[example]]
-name = "compio_file_copy"
-required-features = ["atomics"]
+[workspace.dependencies]

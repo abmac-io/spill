@@ -183,7 +183,7 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     /// # Example
     ///
     /// ```
-    /// use spill_ring_core::{MpscRing, CollectSink, collect_producers};
+    /// use spill_ring_core::{MpscRing, CollectSink, collect};
     /// use std::thread;
     ///
     /// let (producers, mut consumer) = MpscRing::<u64, 256>::with_consumer(4);
@@ -202,7 +202,7 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     ///     .collect()
     /// });
     ///
-    /// collect_producers(finished, &mut consumer);
+    /// collect(finished, &mut consumer);
     ///
     /// let mut sink = CollectSink::new();
     /// consumer.drain(&mut sink);
@@ -280,7 +280,7 @@ impl<T, const N: usize, S: Sink<T> + Clone> MpscRing<T, N, S> {
 /// Collect producers back into a consumer for draining.
 ///
 /// This is a helper to reunite producers with their consumer after threads complete.
-pub fn collect_producers<T, const N: usize, S: Sink<T>>(
+pub fn collect<T, const N: usize, S: Sink<T>>(
     producers: impl IntoIterator<Item = Producer<T, N, S>>,
     consumer: &mut Consumer<T, N, S>,
 ) {

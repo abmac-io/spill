@@ -5,7 +5,7 @@
 //!
 //! Run with: cargo run --example mpsc
 
-use spill_ring::{MpscRing, Sink};
+use spill_ring_core::{MpscRing, Sink};
 use std::{
     fs::File,
     hash::{DefaultHasher, Hash, Hasher},

@@ -18,7 +18,7 @@ pub use bytes::{ByteSerializer, BytesError, FromBytes, ToBytes, ViewBytes};
 pub use iter::{SpillRingIter, SpillRingIterMut};
 #[cfg(feature = "std")]
 pub use mpsc::WorkerPool;
-pub use mpsc::{Consumer, MpscRing, Producer, collect_producers};
+pub use mpsc::{Consumer, MpscRing, Producer, collect};
 pub use ring::SpillRing;
 #[cfg(feature = "std")]
 pub use sink::ChannelSink;
