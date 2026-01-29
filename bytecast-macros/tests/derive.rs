@@ -1,13 +1,12 @@
 //! Integration tests for derive macros.
 
-use bytecast::{BytesError, FromBytes, ToBytes};
-use bytecast_macros::{FromBytes, ToBytes};
+use bytecast::{BytesError, DeriveFromBytes, DeriveToBytes, FromBytes, ToBytes};
 
 // =============================================================================
 // Struct tests
 // =============================================================================
 
-#[derive(ToBytes, FromBytes, Debug, PartialEq)]
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
 struct UnitStruct;
 
 #[test]
@@ -24,7 +23,7 @@ fn test_derive_unit_struct() {
     assert_eq!(consumed, 0);
 }
 
-#[derive(ToBytes, FromBytes, Debug, PartialEq)]
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
 struct SimpleStruct {
     a: u32,
     b: u16,
@@ -47,7 +46,7 @@ fn test_derive_simple_struct() {
     assert_eq!(consumed, 6);
 }
 
-#[derive(ToBytes, FromBytes, Debug, PartialEq)]
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
 struct TupleStruct(u32, u8);
 
 #[test]
@@ -64,7 +63,7 @@ fn test_derive_tuple_struct() {
     assert_eq!(consumed, 5);
 }
 
-#[derive(ToBytes, FromBytes, Debug, PartialEq)]
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
 struct NestedStruct {
     inner: SimpleStruct,
     flag: bool,
@@ -91,7 +90,7 @@ fn test_derive_nested_struct() {
 // Enum tests
 // =============================================================================
 
-#[derive(ToBytes, FromBytes, Debug, PartialEq)]
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
 enum UnitEnum {
     A,
     B,
@@ -115,7 +114,7 @@ fn test_derive_unit_enum() {
     assert_eq!(UnitEnum::MAX_SIZE, Some(1));
 }
 
-#[derive(ToBytes, FromBytes, Debug, PartialEq)]
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
 enum TupleEnum {
     Empty,
     Single(u32),
@@ -151,7 +150,7 @@ fn test_derive_tuple_enum() {
     assert_eq!(TupleEnum::MAX_SIZE, Some(5));
 }
 
-#[derive(ToBytes, FromBytes, Debug, PartialEq)]
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
 enum StructEnum {
     Empty,
     Point { x: i32, y: i32 },
