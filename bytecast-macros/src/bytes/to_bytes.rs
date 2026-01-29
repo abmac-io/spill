@@ -20,11 +20,12 @@ fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let (body, byte_len_body) = match &input.data {
+    let (body, byte_len_body, max_size_body) = match &input.data {
         Data::Struct(data) => {
             let body = generate_struct(&data.fields)?;
             let byte_len = generate_byte_len_struct(&data.fields);
-            (body, byte_len)
+            let max_size = generate_max_size_struct(&data.fields);
+            (body, byte_len, max_size)
         }
         Data::Enum(data) => {
             if data.variants.len() > 256 {
@@ -35,7 +36,8 @@ fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
             }
             let body = generate_enum(data)?;
             let byte_len = generate_byte_len_enum(data);
-            (body, byte_len)
+            let max_size = generate_max_size_enum(data);
+            (body, byte_len, max_size)
         }
         Data::Union(_) => {
             return Err(syn::Error::new_spanned(
@@ -47,6 +49,8 @@ fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     Ok(quote! {
         impl #impl_generics bytecast::ToBytes for #name #ty_generics #where_clause {
+            const MAX_SIZE: Option<usize> = #max_size_body;
+
             fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, bytecast::BytesError> {
                 let mut offset = 0usize;
                 #body
@@ -132,6 +136,69 @@ fn generate_byte_len_struct(fields: &Fields) -> TokenStream2 {
                 quote! { Some(0) }
             } else {
                 quote! { Some(0 #(+ #field_lens)*) }
+            }
+        }
+        Fields::Unit => quote! { Some(0) },
+    }
+}
+
+fn generate_max_size_struct(fields: &Fields) -> TokenStream2 {
+    match fields {
+        Fields::Named(named) => {
+            if named.named.is_empty() {
+                return quote! { Some(0) };
+            }
+            let field_sizes: Vec<_> = named
+                .named
+                .iter()
+                .map(|f| {
+                    let ty = &f.ty;
+                    quote! { <#ty as bytecast::ToBytes>::MAX_SIZE }
+                })
+                .collect();
+            quote! {
+                {
+                    // Use const fn to compute at compile time
+                    const fn compute_max_size() -> Option<usize> {
+                        let mut total = 0usize;
+                        #(
+                            match #field_sizes {
+                                Some(s) => total += s,
+                                None => return None,
+                            }
+                        )*
+                        Some(total)
+                    }
+                    compute_max_size()
+                }
+            }
+        }
+        Fields::Unnamed(unnamed) => {
+            if unnamed.unnamed.is_empty() {
+                return quote! { Some(0) };
+            }
+            let field_sizes: Vec<_> = unnamed
+                .unnamed
+                .iter()
+                .map(|f| {
+                    let ty = &f.ty;
+                    quote! { <#ty as bytecast::ToBytes>::MAX_SIZE }
+                })
+                .collect();
+            quote! {
+                {
+                    const fn compute_max_size() -> Option<usize> {
+                        let mut total = 0usize;
+                        #(
+                            match #field_sizes {
+                                Some(s) => total += s,
+                                None => return None,
+                            }
+                        )*
+                        Some(total)
+                    }
+                    compute_max_size()
+                }
             }
         }
         Fields::Unit => quote! { Some(0) },
@@ -255,6 +322,64 @@ fn generate_byte_len_enum(data: &syn::DataEnum) -> TokenStream2 {
     quote! {
         match self {
             #(#match_arms),*
+        }
+    }
+}
+
+fn generate_max_size_enum(data: &syn::DataEnum) -> TokenStream2 {
+    if data.variants.is_empty() {
+        return quote! { Some(1) }; // Just discriminant
+    }
+
+    // Collect max sizes for each variant's fields
+    let variant_sizes: Vec<_> = data
+        .variants
+        .iter()
+        .map(|variant| {
+            let field_sizes: Vec<_> = match &variant.fields {
+                Fields::Named(named) => named
+                    .named
+                    .iter()
+                    .map(|f| {
+                        let ty = &f.ty;
+                        quote! { <#ty as bytecast::ToBytes>::MAX_SIZE }
+                    })
+                    .collect(),
+                Fields::Unnamed(unnamed) => unnamed
+                    .unnamed
+                    .iter()
+                    .map(|f| {
+                        let ty = &f.ty;
+                        quote! { <#ty as bytecast::ToBytes>::MAX_SIZE }
+                    })
+                    .collect(),
+                Fields::Unit => vec![],
+            };
+            field_sizes
+        })
+        .collect();
+
+    quote! {
+        {
+            const fn compute_max_size() -> Option<usize> {
+                let mut max = 0usize;
+                #(
+                    {
+                        let mut variant_size = 0usize;
+                        #(
+                            match #variant_sizes {
+                                Some(s) => variant_size += s,
+                                None => return None,
+                            }
+                        )*
+                        if variant_size > max {
+                            max = variant_size;
+                        }
+                    }
+                )*
+                Some(1 + max) // 1 byte discriminant + max variant size
+            }
+            compute_max_size()
         }
     }
 }
