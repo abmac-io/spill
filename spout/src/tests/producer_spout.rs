@@ -5,14 +5,15 @@ use crate::{CollectSpout, ProducerSpout, Spout};
 #[test]
 fn producer_spout_assigns_unique_ids() {
     let s = ProducerSpout::new(|_id| CollectSpout::<i32>::new());
+    assert_eq!(s.producer_id(), 0);
 
     let s0 = s.clone();
     let s1 = s.clone();
     let s2 = s.clone();
 
-    assert_eq!(s0.producer_id(), 0);
-    assert_eq!(s1.producer_id(), 1);
-    assert_eq!(s2.producer_id(), 2);
+    assert_eq!(s0.producer_id(), 1);
+    assert_eq!(s1.producer_id(), 2);
+    assert_eq!(s2.producer_id(), 3);
 }
 
 #[test]

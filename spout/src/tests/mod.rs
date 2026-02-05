@@ -284,6 +284,33 @@ fn reduce_spout_threshold_of_one() {
 }
 
 #[test]
+#[should_panic(expected = "BatchSpout threshold must be at least 1")]
+fn batch_spout_rejects_zero_threshold() {
+    let _: BatchSpout<i32, CollectSpout<Vec<i32>>> = BatchSpout::new(0, CollectSpout::new());
+}
+
+#[test]
+#[should_panic(expected = "ReduceSpout threshold must be at least 1")]
+fn reduce_spout_rejects_zero_threshold() {
+    let _: ReduceSpout<i32, usize, _, CollectSpout<usize>> =
+        ReduceSpout::new(0, |b: Vec<i32>| b.len(), CollectSpout::<usize>::new());
+}
+
+#[test]
+fn batch_spout_send_after_flush() {
+    let mut s: BatchSpout<i32, CollectSpout<Vec<i32>>> = BatchSpout::new(3, CollectSpout::new());
+    s.send(1);
+    s.send(2);
+    s.flush();
+    // Buffer should be usable after flush
+    s.send(3);
+    s.send(4);
+    s.send(5);
+    // One batch from flush (partial), one from threshold
+    assert_eq!(s.inner().items(), vec![vec![1, 2], vec![3, 4, 5]]);
+}
+
+#[test]
 fn collect_spout_take_leaves_empty() {
     let mut s = CollectSpout::new();
     s.send(1);
