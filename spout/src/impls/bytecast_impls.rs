@@ -60,7 +60,8 @@ impl<T: ToBytes, S: Spout<Vec<u8>>> Spout<T> for FramedSpout<S> {
         // Determine payload size
         let payload_size = item.byte_len().or(T::MAX_SIZE).unwrap_or(256);
 
-        // Resize buffer to fit header + payload
+        // Prepare buffer for header + payload
+        self.buf.clear();
         self.buf.resize(FRAME_HEADER_SIZE + payload_size, 0);
 
         // Write payload first to learn actual size
@@ -77,9 +78,14 @@ impl<T: ToBytes, S: Spout<Vec<u8>>> Spout<T> for FramedSpout<S> {
             .write(&(payload_written as u32))
             .expect("FramedSpout: header serialization failed");
 
-        // Truncate to actual size and send
+        // Truncate to actual frame size and swap out — avoids memcpy
         let total = FRAME_HEADER_SIZE + payload_written;
-        self.inner.send(self.buf[..total].to_vec());
+        self.buf.truncate(total);
+        let frame = core::mem::replace(
+            &mut self.buf,
+            Vec::with_capacity(FRAME_HEADER_SIZE + payload_size),
+        );
+        self.inner.send(frame);
     }
 
     #[inline]

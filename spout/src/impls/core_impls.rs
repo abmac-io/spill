@@ -136,7 +136,7 @@ where
             inner: None,
             factory,
             producer_id: 0,
-            next_id: Arc::new(AtomicUsize::new(0)),
+            next_id: Arc::new(AtomicUsize::new(1)),
         }
     }
 
@@ -198,7 +198,11 @@ impl<T, S> BatchSpout<T, S> {
     ///
     /// Items are buffered until `threshold` items accumulate, then forwarded
     /// as a `Vec<T>` to the inner spout.
+    ///
+    /// # Panics
+    /// Panics if `threshold` is 0.
     pub fn new(threshold: usize, sink: S) -> Self {
+        assert!(threshold > 0, "BatchSpout threshold must be at least 1");
         Self {
             buffer: Vec::with_capacity(threshold),
             threshold,
@@ -239,22 +243,16 @@ impl<T, S: Spout<Vec<T>>> Spout<T> for BatchSpout<T, S> {
     fn send(&mut self, item: T) {
         self.buffer.push(item);
         if self.buffer.len() >= self.threshold {
-            self.sink.send(core::mem::take(&mut self.buffer));
-            self.buffer.reserve(self.threshold);
-        }
-    }
-
-    #[inline]
-    fn send_all(&mut self, items: impl Iterator<Item = T>) {
-        for item in items {
-            self.send(item);
+            let batch = core::mem::replace(&mut self.buffer, Vec::with_capacity(self.threshold));
+            self.sink.send(batch);
         }
     }
 
     #[inline]
     fn flush(&mut self) {
         if !self.buffer.is_empty() {
-            self.sink.send(core::mem::take(&mut self.buffer));
+            let batch = core::mem::replace(&mut self.buffer, Vec::with_capacity(self.threshold));
+            self.sink.send(batch);
         }
         self.sink.flush();
     }
@@ -274,7 +272,11 @@ impl<T, R, F, S> ReduceSpout<T, R, F, S> {
     ///
     /// Items are buffered until `threshold` items accumulate, then `reduce`
     /// is called with the batch and the result is forwarded to the inner spout.
+    ///
+    /// # Panics
+    /// Panics if `threshold` is 0.
     pub fn new(threshold: usize, reduce: F, sink: S) -> Self {
+        assert!(threshold > 0, "ReduceSpout threshold must be at least 1");
         Self {
             buffer: Vec::with_capacity(threshold),
             threshold,
@@ -321,23 +323,21 @@ where
     fn send(&mut self, item: T) {
         self.buffer.push(item);
         if self.buffer.len() >= self.threshold {
-            let reduced = (self.reduce)(core::mem::take(&mut self.buffer));
+            let reduced = (self.reduce)(core::mem::replace(
+                &mut self.buffer,
+                Vec::with_capacity(self.threshold),
+            ));
             self.sink.send(reduced);
-            self.buffer.reserve(self.threshold);
-        }
-    }
-
-    #[inline]
-    fn send_all(&mut self, items: impl Iterator<Item = T>) {
-        for item in items {
-            self.send(item);
         }
     }
 
     #[inline]
     fn flush(&mut self) {
         if !self.buffer.is_empty() {
-            let reduced = (self.reduce)(core::mem::take(&mut self.buffer));
+            let reduced = (self.reduce)(core::mem::replace(
+                &mut self.buffer,
+                Vec::with_capacity(self.threshold),
+            ));
             self.sink.send(reduced);
         }
         self.sink.flush();
