@@ -3,9 +3,10 @@
 //! Zero-overhead MPSC: each producer owns its own ring, no shared state.
 //! Runs with the default (non-atomic) configuration for maximum performance.
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use spill_ring::{MpscRing, SpillRing, collect};
 use spout::{CollectSpout, DropSpout, ProducerSpout, Spout};
+use std::hint::black_box;
 use std::{
     sync::{
         Arc,

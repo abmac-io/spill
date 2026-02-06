@@ -29,7 +29,6 @@ pub trait RingProducer<T>: RingInfo {
     ///
     /// # Errors:
     /// Returns `Ok(())` if successful, or `Err(item)` if the ring is full.
-    #[must_use]
     fn try_push(&mut self, item: T) -> Result<(), T>;
 }
 

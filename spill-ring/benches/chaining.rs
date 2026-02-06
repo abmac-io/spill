@@ -3,9 +3,10 @@
 //! Compares single ring vs chained rings to measure the overhead
 //! of tiered buffering.
 
-use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use spill_ring::SpillRing;
 use spout::{BatchSpout, CollectSpout, DropSpout, ReduceSpout};
+use std::hint::black_box;
 
 /// Compare single ring vs chained rings - no overflow case.
 /// When items stay in the first ring, chaining should have zero overhead.
