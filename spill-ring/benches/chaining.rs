@@ -2,6 +2,16 @@
 //!
 //! Compares single ring vs chained rings to measure the overhead
 //! of tiered buffering.
+//!
+//! NOTE: Chained rings must be recreated each iteration because inner rings
+//! are owned by the outer ring's sink — there's no way to reset the full
+//! chain without rebuilding it. Single-ring baselines are pre-warmed and
+//! reused via `clear()`.
+//!
+//! API improvement opportunity: a `reset()` method that recursively resets
+//! chained rings (clearing items at each level) would let us hoist chain
+//! construction outside the loop. This would require a `Reset` trait on
+//! `Spout` so each level can participate.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use spill_ring::SpillRing;
@@ -16,18 +26,22 @@ fn chaining_no_overflow(c: &mut Criterion) {
     let iterations = 1000u64;
     group.throughput(Throughput::Elements(iterations));
 
-    // Single ring, capacity 64 - push 32 items (no overflow)
-    group.bench_function("single_ring_64", |b| {
-        b.iter(|| {
-            let ring: SpillRing<u64, 64> = SpillRing::new();
-            for i in 0..32u64 {
-                ring.push(black_box(i));
-            }
-            black_box(ring.len())
-        })
-    });
+    // Single ring, capacity 64 - push 32 items (no overflow) — pre-warmed
+    {
+        let mut ring: SpillRing<u64, 64> = SpillRing::new();
+        group.bench_function("single_ring_64", |b| {
+            b.iter(|| {
+                ring.clear();
+                for i in 0..32u64 {
+                    ring.push(black_box(i));
+                }
+                black_box(ring.len())
+            })
+        });
+    }
 
     // Chained: ring1(32) -> ring2(32) - push 32 items (no overflow from ring1)
+    // Must recreate each iteration — inner ring owned by outer sink
     group.bench_function("chained_32_32", |b| {
         b.iter(|| {
             let ring2: SpillRing<u64, 32> = SpillRing::new();
@@ -50,19 +64,21 @@ fn chaining_with_overflow(c: &mut Criterion) {
     let iterations = 10_000u64;
     group.throughput(Throughput::Elements(iterations));
 
-    // Single ring capacity 64, push 10k items - heavy eviction to DropSpout
-    group.bench_function("single_64_to_drop", |b| {
-        b.iter(|| {
-            let ring: SpillRing<u64, 64, DropSpout> = SpillRing::new();
-            for i in 0..iterations {
-                ring.push(black_box(i));
-            }
-            black_box(ring.len())
-        })
-    });
+    // Single ring capacity 64, push 10k items — pre-warmed
+    {
+        let mut ring: SpillRing<u64, 64, DropSpout> = SpillRing::new();
+        group.bench_function("single_64_to_drop", |b| {
+            b.iter(|| {
+                ring.clear();
+                for i in 0..iterations {
+                    ring.push(black_box(i));
+                }
+                black_box(ring.len())
+            })
+        });
+    }
 
     // Chained: ring1(32) -> ring2(32) -> DropSpout, push 10k items
-    // Items cascade: ring1 overflows to ring2, ring2 overflows to drop
     group.bench_function("chained_32_32_to_drop", |b| {
         b.iter(|| {
             let ring2: SpillRing<u64, 32, DropSpout> = SpillRing::new();
@@ -97,7 +113,7 @@ fn chaining_collect(c: &mut Criterion) {
     let iterations = 10_000u64;
     group.throughput(Throughput::Elements(iterations));
 
-    // Single ring -> CollectSpout
+    // Single ring -> CollectSpout (must recreate — sink accumulates)
     group.bench_function("single_64_collect", |b| {
         b.iter(|| {
             let ring: SpillRing<u64, 64, _> = SpillRing::with_sink(CollectSpout::new());
@@ -130,16 +146,19 @@ fn chaining_depth(c: &mut Criterion) {
     let iterations = 10_000u64;
     group.throughput(Throughput::Elements(iterations));
 
-    // Depth 1: single ring
-    group.bench_function("depth_1", |b| {
-        b.iter(|| {
-            let ring: SpillRing<u64, 64, DropSpout> = SpillRing::new();
-            for i in 0..iterations {
-                ring.push(black_box(i));
-            }
-            black_box(ring.len())
-        })
-    });
+    // Depth 1: single ring — pre-warmed
+    {
+        let mut ring: SpillRing<u64, 64, DropSpout> = SpillRing::new();
+        group.bench_function("depth_1", |b| {
+            b.iter(|| {
+                ring.clear();
+                for i in 0..iterations {
+                    ring.push(black_box(i));
+                }
+                black_box(ring.len())
+            })
+        });
+    }
 
     // Depth 2: ring -> ring -> drop
     group.bench_function("depth_2", |b| {

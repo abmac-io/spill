@@ -67,7 +67,7 @@ fn ring_chaining_flush_cascades() {
     assert_eq!(ring1.sink().len(), 3);
 
     // Flush ring2 -> items go to final_sink
-    unsafe { ring1.sink_mut_unchecked() }.flush();
+    ring1.sink_mut().flush();
     assert!(ring1.sink().is_empty());
     assert_eq!(ring1.sink().sink().items(), vec![1, 2, 3]);
 }

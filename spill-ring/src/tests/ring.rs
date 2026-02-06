@@ -77,8 +77,9 @@ fn flush_to_sink() {
 }
 
 #[test]
+#[allow(unused_mut)] // mut required with `atomics` feature
 fn peek_oldest_and_newest() {
-    let ring: SpillRing<i32, 4> = SpillRing::new();
+    let mut ring: SpillRing<i32, 4> = SpillRing::new();
 
     assert_eq!(ring.peek(), None);
     assert_eq!(ring.peek_back(), None);
@@ -94,8 +95,9 @@ fn peek_oldest_and_newest() {
 }
 
 #[test]
+#[allow(unused_mut)] // mut required with `atomics` feature
 fn iteration() {
-    let ring: SpillRing<i32, 4> = SpillRing::new();
+    let mut ring: SpillRing<i32, 4> = SpillRing::new();
 
     ring.push(1);
     ring.push(2);
@@ -153,8 +155,9 @@ fn wraparound() {
 }
 
 #[test]
+#[allow(unused_mut)] // mut required with `atomics` feature
 fn get_by_index() {
-    let ring: SpillRing<i32, 4> = SpillRing::new();
+    let mut ring: SpillRing<i32, 4> = SpillRing::new();
 
     ring.push(10);
     ring.push(20);
@@ -249,36 +252,6 @@ fn overflow_sends_to_sink_immediately() {
 }
 
 #[test]
-fn clear_drop_ignores_sink() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    static SINK_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-    struct CountingSink;
-    impl spout::Spout<i32> for CountingSink {
-        fn send(&mut self, _item: i32) {
-            SINK_COUNT.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    SINK_COUNT.store(0, Ordering::SeqCst);
-
-    let ring = SpillRing::<i32, 4, _>::with_sink(CountingSink);
-    ring.push(1);
-    ring.push(2);
-    ring.push(3);
-
-    ring.clear_drop();
-
-    assert!(ring.is_empty());
-    // Spout should NOT have been called
-    assert_eq!(SINK_COUNT.load(Ordering::SeqCst), 0);
-
-    // Prevent drop from calling sink by clearing again
-    ring.clear_drop();
-}
-
-#[test]
 fn push_and_flush() {
     let sink = CollectSpout::new();
     let mut ring = SpillRing::<i32, 4, _>::with_sink(sink);
@@ -317,8 +290,9 @@ fn default_creates_empty_ring() {
 }
 
 #[test]
+#[allow(unused_mut)] // mut required with `atomics` feature
 fn iter_nth() {
-    let ring: SpillRing<i32, 8> = SpillRing::new();
+    let mut ring: SpillRing<i32, 8> = SpillRing::new();
     ring.push(10);
     ring.push(20);
     ring.push(30);

@@ -1,4 +1,7 @@
 //! Latency benchmarks - per-operation timing.
+//!
+//! Rings are created once (pre-warmed) and reused across iterations.
+//! This measures steady-state per-operation latency.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use spill_ring::SpillRing;
@@ -67,35 +70,38 @@ fn pop_latency(c: &mut Criterion) {
 }
 
 /// Benchmark peek latency (no removal).
+#[allow(unused_mut)] // mut required with `atomics` feature
 fn peek_latency(c: &mut Criterion) {
     let mut group = c.benchmark_group("peek_latency");
 
     group.bench_function("peek", |b| {
-        let ring: SpillRing<u64, 64> = SpillRing::new();
+        let mut ring: SpillRing<u64, 64> = SpillRing::new();
         for i in 0..32u64 {
             ring.push(i);
         }
-        b.iter(|| black_box(ring.peek()))
+        b.iter(|| black_box(ring.peek().copied()))
     });
 
     group.bench_function("peek_back", |b| {
-        let ring: SpillRing<u64, 64> = SpillRing::new();
+        let mut ring: SpillRing<u64, 64> = SpillRing::new();
         for i in 0..32u64 {
             ring.push(i);
         }
-        b.iter(|| black_box(ring.peek_back()))
+        b.iter(|| black_box(ring.peek_back().copied()))
     });
 
     group.finish();
 }
 
 /// Benchmark drain iterator.
+///
+/// Ring is pre-warmed once. Each iteration refills and drains.
 fn drain_latency(c: &mut Criterion) {
     let mut group = c.benchmark_group("drain_latency");
 
     group.bench_function("drain_64_items", |b| {
+        let mut ring: SpillRing<u64, 64> = SpillRing::new();
         b.iter(|| {
-            let mut ring: SpillRing<u64, 64> = SpillRing::new();
             for i in 0..64u64 {
                 ring.push(i);
             }

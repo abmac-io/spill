@@ -48,7 +48,7 @@ pub trait RingConsumer<T>: RingInfo {
     ///
     /// Returns `None` if the ring is empty.
     #[must_use]
-    fn peek(&self) -> Option<&T>;
+    fn peek(&mut self) -> Option<&T>;
 }
 
 /// Combined producer and consumer trait.

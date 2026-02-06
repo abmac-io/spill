@@ -6,7 +6,7 @@ use core::{cell::UnsafeCell, mem::MaybeUninit};
 
 use crate::{
     index::{Index, SpoutCell},
-    iter::{SpillRingIter, SpillRingIterMut},
+    iter::SpillRingIterMut,
     traits::{RingConsumer, RingInfo, RingProducer},
 };
 use spout::{DropSpout, Spout};
@@ -128,14 +128,15 @@ impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
     /// are reset afterwards -- no items are logically added to the ring.
     ///
     /// Called automatically by [`new()`](SpillRing::new) and [`with_sink()`](Self::with_sink).
-    pub fn warm(&self) {
+    fn warm(&self) {
         for i in 0..N {
             unsafe {
                 let slot = &self.buffer[i];
-                core::ptr::write_volatile(
-                    (*slot.data.get()).as_mut_ptr(),
-                    MaybeUninit::<T>::uninit().assume_init_read(),
-                );
+                // Safety: write zeroed bytes to fault the page and pull the
+                // cache line into L1/L2. We never produce a typed `T` value —
+                // writing raw bytes into MaybeUninit storage is always valid.
+                let ptr = slot.data.get() as *mut u8;
+                core::ptr::write_bytes(ptr, 0, core::mem::size_of::<MaybeUninit<T>>());
             }
         }
         self.head.store(0);
@@ -282,8 +283,9 @@ impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
     }
 
     /// # Safety
-    /// Consumer context only.
-    pub unsafe fn flush_unchecked(&self) -> usize {
+    /// Consumer context only — must not be called concurrently with
+    /// any other method that accesses the sink (e.g., push eviction).
+    pub(crate) unsafe fn flush_unchecked(&self) -> usize {
         let mut count = 0;
         while let Some(item) = self.pop() {
             unsafe { self.sink.get_mut_unchecked().send(item) };
@@ -375,47 +377,6 @@ impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
         Some(item)
     }
 
-    /// Peek at the oldest item.
-    ///
-    /// Note: In concurrent SPSC use, the peeked reference may become invalid
-    /// if producer evicts this item. Use with caution or prefer `pop()`.
-    #[inline]
-    #[must_use]
-    pub fn peek(&self) -> Option<&T> {
-        let head = self.head.load_relaxed();
-        let tail = self.tail.load();
-
-        if head == tail {
-            return None;
-        }
-
-        Some(unsafe {
-            let slot = &self.buffer[head % N];
-            (*slot.data.get()).assume_init_ref()
-        })
-    }
-
-    /// Peek at the newest item.
-    ///
-    /// Note: In concurrent SPSC use, the peeked reference may become invalid
-    /// if producer overwrites this slot. Use with caution.
-    #[inline]
-    #[must_use]
-    pub fn peek_back(&self) -> Option<&T> {
-        let head = self.head.load_relaxed();
-        let tail = self.tail.load();
-
-        if head == tail {
-            return None;
-        }
-
-        let idx = tail.wrapping_sub(1) % N;
-        Some(unsafe {
-            let slot = &self.buffer[idx];
-            (*slot.data.get()).assume_init_ref()
-        })
-    }
-
     /// Number of items in buffer.
     #[inline]
     #[must_use]
@@ -444,14 +405,9 @@ impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
         N
     }
 
-    /// Clear buffer, flushing to spout.
+    /// Clear all items from the buffer, flushing them to the spout.
     pub fn clear(&mut self) {
         self.flush();
-    }
-
-    /// Clear buffer, dropping items (bypasses spout).
-    pub fn clear_drop(&self) {
-        while self.pop().is_some() {}
     }
 
     /// Reference to the spout.
@@ -461,39 +417,10 @@ impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
         self.sink.get_ref()
     }
 
-    /// # Safety
-    /// Consumer context only.
+    /// Mutable reference to the spout.
     #[inline]
-    #[allow(clippy::mut_from_ref)]
-    pub unsafe fn sink_mut_unchecked(&self) -> &mut S {
-        unsafe { self.sink.get_mut_unchecked() }
-    }
-
-    /// Get item by index (0 = oldest).
-    ///
-    /// Note: In concurrent SPSC use, the reference may become invalid.
-    #[inline]
-    #[must_use]
-    pub fn get(&self, index: usize) -> Option<&T> {
-        let head = self.head.load_relaxed();
-        let tail = self.tail.load();
-        let len = tail.wrapping_sub(head);
-
-        if index >= len {
-            return None;
-        }
-
-        let idx = head.wrapping_add(index) % N;
-        Some(unsafe {
-            let slot = &self.buffer[idx];
-            (*slot.data.get()).assume_init_ref()
-        })
-    }
-
-    /// Iterate oldest to newest.
-    #[inline]
-    pub fn iter(&self) -> SpillRingIter<'_, T, N, S> {
-        SpillRingIter::new(self)
+    pub fn sink_mut(&mut self) -> &mut S {
+        self.sink.get_mut()
     }
 
     /// Iterate mutably, oldest to newest.
@@ -609,7 +536,7 @@ impl<T, const N: usize, S: Spout<T>> RingConsumer<T> for SpillRing<T, N, S> {
     }
 
     #[inline]
-    fn peek(&self) -> Option<&T> {
+    fn peek(&mut self) -> Option<&T> {
         SpillRing::peek(self)
     }
 }

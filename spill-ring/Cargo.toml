@@ -38,6 +38,10 @@ harness = false
 required-features = ["atomics"]
 
 [[bench]]
+name = "chaining"
+harness = false
+
+[[bench]]
 name = "comparison"
 harness = false
 

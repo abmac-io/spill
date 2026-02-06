@@ -6,6 +6,7 @@
 mod index;
 mod iter;
 mod mpsc;
+mod read;
 mod ring;
 mod traits;
 
@@ -21,8 +22,8 @@ mod tests;
 //pub use spout::ChannelSpout;
 
 pub use iter::{SpillRingIter, SpillRingIterMut};
-#[cfg(feature = "std")]
-pub use mpsc::WorkerPool;
 pub use mpsc::{Consumer, MpscRing, Producer, collect};
+#[cfg(feature = "std")]
+pub use mpsc::{PoolBuilder, WorkerPool};
 pub use ring::SpillRing;
 pub use traits::{RingConsumer, RingInfo, RingProducer, RingTrait};
