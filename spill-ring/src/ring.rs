@@ -63,9 +63,24 @@ unsafe impl<T: Send, const N: usize, S: Spout<T> + Send> Sync for SpillRing<T, N
 const MAX_CAPACITY: usize = 1 << 20;
 
 impl<T, const N: usize> SpillRing<T, N, DropSpout> {
-    /// Create a new ring buffer (evicted items are dropped).
+    /// Create a new ring buffer with pre-warmed cache (evicted items are dropped).
+    ///
+    /// All buffer slots are touched to bring memory into L1/L2 cache before
+    /// the ring is returned. This is the recommended default for all use cases.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        let ring = Self::cold();
+        ring.warm();
+        ring
+    }
+
+    /// Create a new ring buffer without cache warming (evicted items are dropped).
+    ///
+    /// Use this only in constrained environments (embedded, const contexts)
+    /// where the warming overhead is unacceptable. Prefer [`new()`](Self::new)
+    /// for all other cases.
+    #[must_use]
+    pub const fn cold() -> Self {
         const { assert!(N > 0, "capacity must be > 0") };
         const { assert!(N.is_power_of_two(), "capacity must be power of two") };
         const { assert!(N <= MAX_CAPACITY, "capacity exceeds maximum (2^20)") };
@@ -80,9 +95,20 @@ impl<T, const N: usize> SpillRing<T, N, DropSpout> {
 }
 
 impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
-    /// Create a new ring buffer with a custom spout.
+    /// Create a new ring buffer with pre-warmed cache and a custom spout.
     #[must_use]
     pub fn with_sink(sink: S) -> Self {
+        let ring = Self::with_sink_cold(sink);
+        ring.warm();
+        ring
+    }
+
+    /// Create a new ring buffer with a custom spout, without cache warming.
+    ///
+    /// Use this only in constrained environments. Prefer [`with_sink()`](Self::with_sink)
+    /// for all other cases.
+    #[must_use]
+    pub fn with_sink_cold(sink: S) -> Self {
         const { assert!(N > 0, "capacity must be > 0") };
         const { assert!(N.is_power_of_two(), "capacity must be power of two") };
         const { assert!(N <= MAX_CAPACITY, "capacity exceeds maximum (2^20)") };
@@ -93,6 +119,27 @@ impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
             tail: Index::new(0),
             sink: SpoutCell::new(sink),
         }
+    }
+
+    /// Bring all ring slots into L1/L2 cache.
+    ///
+    /// Touches every slot with a volatile write to fault the memory pages
+    /// and pull cache lines into the CPU's local cache hierarchy. Indices
+    /// are reset afterwards -- no items are logically added to the ring.
+    ///
+    /// Called automatically by [`new()`](SpillRing::new) and [`with_sink()`](Self::with_sink).
+    pub fn warm(&self) {
+        for i in 0..N {
+            unsafe {
+                let slot = &self.buffer[i];
+                core::ptr::write_volatile(
+                    (*slot.data.get()).as_mut_ptr(),
+                    MaybeUninit::<T>::uninit().assume_init_read(),
+                );
+            }
+        }
+        self.head.store(0);
+        self.tail.store(0);
     }
 
     /// Push an item. If full, evicts oldest to spout.
