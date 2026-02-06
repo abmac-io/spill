@@ -2,9 +2,9 @@
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use spill_ring::SpillRing;
-use spout::{CollectSink, DropSink};
+use spout::{CollectSpout, DropSpout};
 
-/// Benchmark push throughput with DropSink (items discarded on eviction).
+/// Benchmark push throughput with DropSpout (items discarded on eviction).
 fn push_throughput_drop_sink(c: &mut Criterion) {
     let mut group = c.benchmark_group("push_throughput_drop_sink");
 
@@ -15,25 +15,25 @@ fn push_throughput_drop_sink(c: &mut Criterion) {
             &capacity,
             |b, &cap| match cap {
                 16 => b.iter(|| {
-                    let ring: SpillRing<u64, 16, DropSink> = SpillRing::new();
+                    let ring: SpillRing<u64, 16, DropSpout> = SpillRing::new();
                     for i in 0..10_000u64 {
                         ring.push(black_box(i));
                     }
                 }),
                 64 => b.iter(|| {
-                    let ring: SpillRing<u64, 64, DropSink> = SpillRing::new();
+                    let ring: SpillRing<u64, 64, DropSpout> = SpillRing::new();
                     for i in 0..10_000u64 {
                         ring.push(black_box(i));
                     }
                 }),
                 256 => b.iter(|| {
-                    let ring: SpillRing<u64, 256, DropSink> = SpillRing::new();
+                    let ring: SpillRing<u64, 256, DropSpout> = SpillRing::new();
                     for i in 0..10_000u64 {
                         ring.push(black_box(i));
                     }
                 }),
                 1024 => b.iter(|| {
-                    let ring: SpillRing<u64, 1024, DropSink> = SpillRing::new();
+                    let ring: SpillRing<u64, 1024, DropSpout> = SpillRing::new();
                     for i in 0..10_000u64 {
                         ring.push(black_box(i));
                     }
@@ -45,7 +45,7 @@ fn push_throughput_drop_sink(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark push throughput with CollectSink (items collected on eviction).
+/// Benchmark push throughput with CollectSpout (items collected on eviction).
 fn push_throughput_collect_sink(c: &mut Criterion) {
     let mut group = c.benchmark_group("push_throughput_collect_sink");
 
@@ -56,19 +56,19 @@ fn push_throughput_collect_sink(c: &mut Criterion) {
             &capacity,
             |b, &cap| match cap {
                 16 => b.iter(|| {
-                    let ring: SpillRing<u64, 16, _> = SpillRing::with_sink(CollectSink::new());
+                    let ring: SpillRing<u64, 16, _> = SpillRing::with_sink(CollectSpout::new());
                     for i in 0..10_000u64 {
                         ring.push(black_box(i));
                     }
                 }),
                 64 => b.iter(|| {
-                    let ring: SpillRing<u64, 64, _> = SpillRing::with_sink(CollectSink::new());
+                    let ring: SpillRing<u64, 64, _> = SpillRing::with_sink(CollectSpout::new());
                     for i in 0..10_000u64 {
                         ring.push(black_box(i));
                     }
                 }),
                 256 => b.iter(|| {
-                    let ring: SpillRing<u64, 256, _> = SpillRing::with_sink(CollectSink::new());
+                    let ring: SpillRing<u64, 256, _> = SpillRing::with_sink(CollectSpout::new());
                     for i in 0..10_000u64 {
                         ring.push(black_box(i));
                     }

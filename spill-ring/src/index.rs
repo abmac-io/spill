@@ -46,11 +46,11 @@ mod atomic {
         }
     }
 
-    /// Interior mutable cell for sink.
+    /// Interior mutable cell for spout.
     #[repr(transparent)]
-    pub struct SinkCell<S>(UnsafeCell<S>);
+    pub struct SpoutCell<S>(UnsafeCell<S>);
 
-    impl<S> SinkCell<S> {
+    impl<S> SpoutCell<S> {
         #[inline]
         pub const fn new(sink: S) -> Self {
             Self(UnsafeCell::new(sink))
@@ -74,8 +74,8 @@ mod atomic {
         }
     }
 
-    unsafe impl<S: Send> Send for SinkCell<S> {}
-    unsafe impl<S: Send> Sync for SinkCell<S> {}
+    unsafe impl<S: Send> Send for SpoutCell<S> {}
+    unsafe impl<S: Send> Sync for SpoutCell<S> {}
 }
 
 #[cfg(not(feature = "atomics"))]
@@ -108,11 +108,11 @@ mod non_atomic {
         }
     }
 
-    /// Interior mutable cell for sink.
+    /// Interior mutable cell for spout.
     #[repr(transparent)]
-    pub struct SinkCell<S>(UnsafeCell<S>);
+    pub struct SpoutCell<S>(UnsafeCell<S>);
 
-    impl<S> SinkCell<S> {
+    impl<S> SpoutCell<S> {
         #[inline]
         pub const fn new(sink: S) -> Self {
             Self(UnsafeCell::new(sink))
@@ -136,11 +136,11 @@ mod non_atomic {
         }
     }
 
-    unsafe impl<S: Send> Send for SinkCell<S> {}
+    unsafe impl<S: Send> Send for SpoutCell<S> {}
 }
 
 #[cfg(feature = "atomics")]
-pub use atomic::{Index, SinkCell};
+pub use atomic::{Index, SpoutCell};
 
 #[cfg(not(feature = "atomics"))]
-pub use non_atomic::{Index, SinkCell};
+pub use non_atomic::{Index, SpoutCell};

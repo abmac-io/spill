@@ -3,7 +3,7 @@ extern crate std;
 use std::{vec, vec::Vec};
 
 use crate::SpillRing;
-use spout::{CollectSink, Sink};
+use spout::CollectSpout;
 
 #[test]
 fn new_ring_is_empty() {
@@ -32,7 +32,7 @@ fn push_and_pop() {
 #[test]
 fn eviction_to_sink() {
     // N=4 main buffer, items evicted directly to sink
-    let sink = CollectSink::new();
+    let sink = CollectSpout::new();
     let ring = SpillRing::<i32, 4, _>::with_sink(sink);
 
     ring.push(1);
@@ -56,7 +56,7 @@ fn eviction_to_sink() {
 
 #[test]
 fn flush_to_sink() {
-    let sink = CollectSink::new();
+    let sink = CollectSpout::new();
     let mut ring = SpillRing::<i32, 4, _>::with_sink(sink);
 
     ring.push(1);
@@ -66,7 +66,7 @@ fn flush_to_sink() {
     ring.push(5); // Evicts 1 directly to sink
     ring.push(6); // Evicts 2 directly to sink
 
-    // Sink already has [1, 2] from direct eviction
+    // Spout already has [1, 2] from direct eviction
     assert_eq!(ring.sink().items(), vec![1, 2]);
 
     // Flush remaining buffer items to sink
@@ -123,7 +123,7 @@ fn iter_mut() {
 
 #[test]
 fn flush_clears_buffer() {
-    let sink = CollectSink::new();
+    let sink = CollectSpout::new();
     let mut ring = SpillRing::<i32, 4, _>::with_sink(sink);
 
     ring.push(1);
@@ -173,7 +173,7 @@ fn drop_flushes_to_sink() {
     static SINK_COUNT: AtomicUsize = AtomicUsize::new(0);
 
     struct CountingSink;
-    impl spout::Sink<i32> for CountingSink {
+    impl spout::Spout<i32> for CountingSink {
         fn send(&mut self, _item: i32) {
             SINK_COUNT.fetch_add(1, Ordering::SeqCst);
         }
@@ -223,7 +223,7 @@ fn drop_with_default_sink_drops_items() {
 #[test]
 fn overflow_sends_to_sink_immediately() {
     // N=2 main buffer, evicted items go directly to sink
-    let sink = CollectSink::new();
+    let sink = CollectSpout::new();
     let ring = SpillRing::<i32, 2, _>::with_sink(sink);
 
     ring.push(1);
@@ -255,7 +255,7 @@ fn clear_drop_ignores_sink() {
     static SINK_COUNT: AtomicUsize = AtomicUsize::new(0);
 
     struct CountingSink;
-    impl spout::Sink<i32> for CountingSink {
+    impl spout::Spout<i32> for CountingSink {
         fn send(&mut self, _item: i32) {
             SINK_COUNT.fetch_add(1, Ordering::SeqCst);
         }
@@ -271,7 +271,7 @@ fn clear_drop_ignores_sink() {
     ring.clear_drop();
 
     assert!(ring.is_empty());
-    // Sink should NOT have been called
+    // Spout should NOT have been called
     assert_eq!(SINK_COUNT.load(Ordering::SeqCst), 0);
 
     // Prevent drop from calling sink by clearing again
@@ -280,7 +280,7 @@ fn clear_drop_ignores_sink() {
 
 #[test]
 fn push_and_flush() {
-    let sink = CollectSink::new();
+    let sink = CollectSpout::new();
     let mut ring = SpillRing::<i32, 4, _>::with_sink(sink);
 
     ring.push_and_flush(1);
@@ -296,7 +296,7 @@ fn push_and_flush() {
 
 #[test]
 fn clear_flushes_to_sink() {
-    let sink = CollectSink::new();
+    let sink = CollectSpout::new();
     let mut ring = SpillRing::<i32, 4, _>::with_sink(sink);
 
     ring.push(1);

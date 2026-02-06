@@ -1,15 +1,15 @@
-//! Ring buffer with overflow spilling to a sink.
+//! Ring buffer with overflow spilling to a spout.
 
 #[cfg(feature = "atomics")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{cell::UnsafeCell, mem::MaybeUninit};
 
 use crate::{
-    index::{Index, SinkCell},
+    index::{Index, SpoutCell},
     iter::{SpillRingIter, SpillRingIterMut},
     traits::{RingConsumer, RingInfo, RingProducer},
 };
-use spout::{DropSink, Sink};
+use spout::{DropSpout, Spout};
 
 /// Slot wrapper with seqlock for safe concurrent access.
 #[cfg(feature = "atomics")]
@@ -45,24 +45,24 @@ impl<T> Slot<T> {
     }
 }
 
-/// Ring buffer that spills evicted items to a sink.
-pub struct SpillRing<T, const N: usize, S: Sink<T> = DropSink> {
+/// Ring buffer that spills evicted items to a spout.
+pub struct SpillRing<T, const N: usize, S: Spout<T> = DropSpout> {
     pub(crate) buffer: [Slot<T>; N],
     pub(crate) head: Index,
     pub(crate) tail: Index,
-    sink: SinkCell<S>,
+    sink: SpoutCell<S>,
 }
 
-unsafe impl<T: Send, const N: usize, S: Sink<T> + Send> Send for SpillRing<T, N, S> {}
+unsafe impl<T: Send, const N: usize, S: Spout<T> + Send> Send for SpillRing<T, N, S> {}
 
 #[cfg(feature = "atomics")]
-unsafe impl<T: Send, const N: usize, S: Sink<T> + Send> Sync for SpillRing<T, N, S> {}
+unsafe impl<T: Send, const N: usize, S: Spout<T> + Send> Sync for SpillRing<T, N, S> {}
 
 /// Maximum supported capacity (2^20 = ~1 million slots).
 /// Prevents accidental huge allocations from typos like `SpillRing<T, 1000000000>`.
 const MAX_CAPACITY: usize = 1 << 20;
 
-impl<T, const N: usize> SpillRing<T, N, DropSink> {
+impl<T, const N: usize> SpillRing<T, N, DropSpout> {
     /// Create a new ring buffer (evicted items are dropped).
     #[must_use]
     pub const fn new() -> Self {
@@ -74,13 +74,13 @@ impl<T, const N: usize> SpillRing<T, N, DropSink> {
             buffer: [const { Slot::new() }; N],
             head: Index::new(0),
             tail: Index::new(0),
-            sink: SinkCell::new(DropSink),
+            sink: SpoutCell::new(DropSpout),
         }
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
-    /// Create a new ring buffer with a custom sink.
+impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
+    /// Create a new ring buffer with a custom spout.
     #[must_use]
     pub fn with_sink(sink: S) -> Self {
         const { assert!(N > 0, "capacity must be > 0") };
@@ -91,11 +91,11 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
             buffer: [const { Slot::new() }; N],
             head: Index::new(0),
             tail: Index::new(0),
-            sink: SinkCell::new(sink),
+            sink: SpoutCell::new(sink),
         }
     }
 
-    /// Push an item. If full, evicts oldest to sink.
+    /// Push an item. If full, evicts oldest to spout.
     ///
     /// Thread-safe for single-producer, single-consumer (SPSC) use.
     /// Multiple concurrent pushes or multiple concurrent pops are NOT safe.
@@ -198,7 +198,7 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
         self.tail.store(tail.wrapping_add(1));
     }
 
-    /// Push an item. If full, evicts oldest to sink.
+    /// Push an item. If full, evicts oldest to spout.
     /// (Non-atomic version for single-threaded use)
     #[inline]
     #[cfg(not(feature = "atomics"))]
@@ -221,14 +221,14 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
         self.tail.store(tail.wrapping_add(1));
     }
 
-    /// Push an item then flush all to sink.
+    /// Push an item then flush all to spout.
     #[inline]
     pub fn push_and_flush(&mut self, item: T) {
         self.push(item);
         self.flush();
     }
 
-    /// Flush all items to sink. Returns count flushed.
+    /// Flush all items to spout. Returns count flushed.
     #[inline]
     pub fn flush(&mut self) -> usize {
         unsafe { self.flush_unchecked() }
@@ -397,17 +397,17 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
         N
     }
 
-    /// Clear buffer, flushing to sink.
+    /// Clear buffer, flushing to spout.
     pub fn clear(&mut self) {
         self.flush();
     }
 
-    /// Clear buffer, dropping items (bypasses sink).
+    /// Clear buffer, dropping items (bypasses spout).
     pub fn clear_drop(&self) {
         while self.pop().is_some() {}
     }
 
-    /// Reference to the sink.
+    /// Reference to the spout.
     #[inline]
     #[must_use]
     pub fn sink(&self) -> &S {
@@ -464,11 +464,11 @@ impl<T, const N: usize, S: Sink<T>> SpillRing<T, N, S> {
 }
 
 /// Draining iterator over a SpillRing.
-pub struct Drain<'a, T, const N: usize, S: Sink<T>> {
+pub struct Drain<'a, T, const N: usize, S: Spout<T>> {
     ring: &'a mut SpillRing<T, N, S>,
 }
 
-impl<T, const N: usize, S: Sink<T>> Iterator for Drain<'_, T, N, S> {
+impl<T, const N: usize, S: Spout<T>> Iterator for Drain<'_, T, N, S> {
     type Item = T;
 
     #[inline]
@@ -483,9 +483,9 @@ impl<T, const N: usize, S: Sink<T>> Iterator for Drain<'_, T, N, S> {
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> ExactSizeIterator for Drain<'_, T, N, S> {}
+impl<T, const N: usize, S: Spout<T>> ExactSizeIterator for Drain<'_, T, N, S> {}
 
-impl<T, const N: usize, S: Sink<T>> core::iter::Extend<T> for SpillRing<T, N, S> {
+impl<T, const N: usize, S: Spout<T>> core::iter::Extend<T> for SpillRing<T, N, S> {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         for item in iter {
             self.push(item);
@@ -493,17 +493,17 @@ impl<T, const N: usize, S: Sink<T>> core::iter::Extend<T> for SpillRing<T, N, S>
     }
 }
 
-impl<T, const N: usize> Default for SpillRing<T, N, DropSink> {
+impl<T, const N: usize> Default for SpillRing<T, N, DropSpout> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// SpillRing can act as a Sink, enabling ring chaining (ring1 -> ring2).
+/// SpillRing can act as a Spout, enabling ring chaining (ring1 -> ring2).
 ///
-/// When used as a sink, items are pushed to the ring. If the ring overflows,
-/// items spill to the ring's own sink, creating a cascade.
-impl<T, const N: usize, S: Sink<T>> Sink<T> for SpillRing<T, N, S> {
+/// When used as a spout, items are pushed to the ring. If the ring overflows,
+/// items spill to the ring's own spout, creating a cascade.
+impl<T, const N: usize, S: Spout<T>> Spout<T> for SpillRing<T, N, S> {
     #[inline]
     fn send(&mut self, item: T) {
         self.push(item);
@@ -511,19 +511,19 @@ impl<T, const N: usize, S: Sink<T>> Sink<T> for SpillRing<T, N, S> {
 
     #[inline]
     fn flush(&mut self) {
-        // Flush remaining items in this ring to its sink
+        // Flush remaining items in this ring to its spout
         SpillRing::flush(self);
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> Drop for SpillRing<T, N, S> {
+impl<T, const N: usize, S: Spout<T>> Drop for SpillRing<T, N, S> {
     fn drop(&mut self) {
         self.flush();
         self.sink.get_mut().flush();
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> RingInfo for SpillRing<T, N, S> {
+impl<T, const N: usize, S: Spout<T>> RingInfo for SpillRing<T, N, S> {
     #[inline]
     fn len(&self) -> usize {
         SpillRing::len(self)
@@ -535,7 +535,7 @@ impl<T, const N: usize, S: Sink<T>> RingInfo for SpillRing<T, N, S> {
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> RingProducer<T> for SpillRing<T, N, S> {
+impl<T, const N: usize, S: Spout<T>> RingProducer<T> for SpillRing<T, N, S> {
     #[inline]
     fn try_push(&mut self, item: T) -> Result<(), T> {
         let tail = self.tail.load_relaxed();
@@ -555,7 +555,7 @@ impl<T, const N: usize, S: Sink<T>> RingProducer<T> for SpillRing<T, N, S> {
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> RingConsumer<T> for SpillRing<T, N, S> {
+impl<T, const N: usize, S: Spout<T>> RingConsumer<T> for SpillRing<T, N, S> {
     #[inline]
     fn try_pop(&mut self) -> Option<T> {
         self.pop()

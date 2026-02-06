@@ -1,17 +1,17 @@
 //! Iterators for SpillRing.
 
 use crate::ring::SpillRing;
-use spout::Sink;
+use spout::Spout;
 
 /// Immutable iterator.
-pub struct SpillRingIter<'a, T, const N: usize, S: Sink<T>> {
+pub struct SpillRingIter<'a, T, const N: usize, S: Spout<T>> {
     ring: &'a SpillRing<T, N, S>,
     pos: usize,
     len: usize,
     head: usize,
 }
 
-impl<'a, T, const N: usize, S: Sink<T>> SpillRingIter<'a, T, N, S> {
+impl<'a, T, const N: usize, S: Spout<T>> SpillRingIter<'a, T, N, S> {
     pub(crate) fn new(ring: &'a SpillRing<T, N, S>) -> Self {
         Self {
             ring,
@@ -22,7 +22,7 @@ impl<'a, T, const N: usize, S: Sink<T>> SpillRingIter<'a, T, N, S> {
     }
 }
 
-impl<'a, T, const N: usize, S: Sink<T>> Iterator for SpillRingIter<'a, T, N, S> {
+impl<'a, T, const N: usize, S: Spout<T>> Iterator for SpillRingIter<'a, T, N, S> {
     type Item = &'a T;
 
     #[inline]
@@ -55,18 +55,18 @@ impl<'a, T, const N: usize, S: Sink<T>> Iterator for SpillRingIter<'a, T, N, S> 
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> ExactSizeIterator for SpillRingIter<'_, T, N, S> {}
-impl<T, const N: usize, S: Sink<T>> core::iter::FusedIterator for SpillRingIter<'_, T, N, S> {}
+impl<T, const N: usize, S: Spout<T>> ExactSizeIterator for SpillRingIter<'_, T, N, S> {}
+impl<T, const N: usize, S: Spout<T>> core::iter::FusedIterator for SpillRingIter<'_, T, N, S> {}
 
 /// Mutable iterator.
-pub struct SpillRingIterMut<'a, T, const N: usize, S: Sink<T>> {
+pub struct SpillRingIterMut<'a, T, const N: usize, S: Spout<T>> {
     ring: &'a SpillRing<T, N, S>,
     pos: usize,
     len: usize,
     head: usize,
 }
 
-impl<'a, T, const N: usize, S: Sink<T>> SpillRingIterMut<'a, T, N, S> {
+impl<'a, T, const N: usize, S: Spout<T>> SpillRingIterMut<'a, T, N, S> {
     pub(crate) fn new(ring: &'a mut SpillRing<T, N, S>) -> Self {
         let len = ring.len();
         let head = ring.head.load();
@@ -79,7 +79,7 @@ impl<'a, T, const N: usize, S: Sink<T>> SpillRingIterMut<'a, T, N, S> {
     }
 }
 
-impl<'a, T, const N: usize, S: Sink<T>> Iterator for SpillRingIterMut<'a, T, N, S> {
+impl<'a, T, const N: usize, S: Spout<T>> Iterator for SpillRingIterMut<'a, T, N, S> {
     type Item = &'a mut T;
 
     #[inline]
@@ -102,5 +102,5 @@ impl<'a, T, const N: usize, S: Sink<T>> Iterator for SpillRingIterMut<'a, T, N, 
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> ExactSizeIterator for SpillRingIterMut<'_, T, N, S> {}
-impl<T, const N: usize, S: Sink<T>> core::iter::FusedIterator for SpillRingIterMut<'_, T, N, S> {}
+impl<T, const N: usize, S: Spout<T>> ExactSizeIterator for SpillRingIterMut<'_, T, N, S> {}
+impl<T, const N: usize, S: Spout<T>> core::iter::FusedIterator for SpillRingIterMut<'_, T, N, S> {}

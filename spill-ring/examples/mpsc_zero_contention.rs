@@ -1,12 +1,12 @@
 //! MPSC zero-contention example: Each producer writes to its own file.
 //!
-//! Demonstrates `ProducerSink` for zero-contention MPSC patterns where each
-//! producer gets its own independent sink.
+//! Demonstrates `ProducerSpout` for zero-contention MPSC patterns where each
+//! producer gets its own independent spout.
 //!
 //! Run with: cargo run --example mpsc_zero_contention
 
 use spill_ring::MpscRing;
-use spout::{FnFlushSink, ProducerSink};
+use spout::{FnFlushSpout, ProducerSpout};
 use std::{
     fs::File,
     io::{BufWriter, Write},
@@ -47,14 +47,14 @@ fn main() -> std::io::Result<()> {
     println!("Each producer writes evictions to its own file - ZERO lock contention!");
     println!();
 
-    // ProducerSink creates independent sinks via factory function.
+    // ProducerSpout creates independent spouts via factory function.
     // Each clone gets a unique producer_id (0, 1, 2, ...).
-    let sink = ProducerSink::new(|producer_id| {
+    let sink = ProducerSpout::new(|producer_id| {
         let path = format!("mpsc_producer_{}.bin", producer_id);
         let file = File::create(&path).expect("failed to create file");
         let mut writer = BufWriter::new(file);
 
-        FnFlushSink::new(
+        FnFlushSpout::new(
             move |item: SensorReading| {
                 writer.write_all(&item.to_bytes()).unwrap();
             },
@@ -62,10 +62,10 @@ fn main() -> std::io::Result<()> {
         )
     });
 
-    // Create MPSC ring - each producer gets its own file sink
+    // Create MPSC ring - each producer gets its own file spout
     let producers = MpscRing::<SensorReading, RING_CAPACITY, _>::with_sink(NUM_PRODUCERS, sink);
 
-    // Spawn producers - each has its own file sink, zero contention
+    // Spawn producers - each has its own file spout, zero contention
     // Items flush to per-producer files on overflow and when producer drops
     thread::scope(|s| {
         for (producer_id, producer) in producers.into_iter().enumerate() {
@@ -78,7 +78,7 @@ fn main() -> std::io::Result<()> {
                     };
                     producer.push(reading);
                 }
-                // Producer drops here, remaining items flush to its file
+                // Producer drops here, remaining items flush to its spout
             });
         }
     });

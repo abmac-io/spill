@@ -1,11 +1,11 @@
-//! SPSC example: Single producer writes sensor data, sink flushes to file.
+//! SPSC example: Single producer writes sensor data, spout flushes to file.
 //!
 //! Demonstrates the spill pattern with file I/O and checksum verification.
 //!
 //! Run with: cargo run --example spsc_file_sink
 
 use spill_ring::SpillRing;
-use spout::FnFlushSink;
+use spout::FnFlushSpout;
 use std::{
     cell::RefCell,
     fs::File,
@@ -55,18 +55,18 @@ fn main() -> std::io::Result<()> {
     println!("Ring capacity: {} (will spill to file)", RING_CAPACITY);
     println!();
 
-    // Shared state for the sink
+    // Shared state for the spout
     let state = Rc::new(RefCell::new(OutputState {
         writer: BufWriter::new(File::create("spsc_output.bin")?),
         hasher: DefaultHasher::new(),
         count: 0,
     }));
 
-    // Create sink closures that capture shared state
+    // Create spout closures that capture shared state
     let state_send = Rc::clone(&state);
     let state_flush = Rc::clone(&state);
 
-    let sink = FnFlushSink::new(
+    let sink = FnFlushSpout::new(
         move |item: SensorReading| {
             let mut s = state_send.borrow_mut();
             item.hash_into(&mut s.hasher);
@@ -94,7 +94,7 @@ fn main() -> std::io::Result<()> {
         ring.push(reading);
     }
 
-    // Flush remaining items in ring to sink
+    // Flush remaining items in ring to spout
     ring.flush();
 
     let input_checksum = input_hasher.finish();

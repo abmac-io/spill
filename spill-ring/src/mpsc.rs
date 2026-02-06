@@ -7,11 +7,12 @@
 //! # Example
 //!
 //! ```
-//! use spill_ring::{MpscRing, CollectSink, ProducerSink};
+//! use spill_ring::MpscRing;
+//! use spout::{CollectSpout, ProducerSpout};
 //! use std::thread;
 //!
-//! // Each producer gets its own CollectSink via ProducerSink factory
-//! let sink = ProducerSink::new(|_id| CollectSink::<u64>::new());
+//! // Each producer gets its own CollectSpout via ProducerSpout factory
+//! let sink = ProducerSpout::new(|_id| CollectSpout::<u64>::new());
 //! let producers = MpscRing::<u64, 1024, _>::with_sink(4, sink);
 //!
 //! // Each producer runs at full speed on its own thread
@@ -21,7 +22,7 @@
 //!             for i in 0..10_000 {
 //!                 producer.push(i);
 //!             }
-//!             // Items flush to sink when producer drops
+//!             // Items flush to spout when producer drops
 //!         });
 //!     }
 //! });
@@ -32,17 +33,17 @@ extern crate alloc;
 use crate::SpillRing;
 
 use alloc::vec::Vec;
-use spout::{DropSink, Sink};
+use spout::{DropSpout, Spout};
 
 /// A producer handle for an MPSC ring.
 ///
 /// Each producer owns its own [`SpillRing`] with zero contention.
 /// When dropped, remaining items stay in the ring for the consumer to drain.
-pub struct Producer<T, const N: usize, S: Sink<T> = DropSink> {
+pub struct Producer<T, const N: usize, S: Spout<T> = DropSpout> {
     ring: SpillRing<T, N, S>,
 }
 
-impl<T, const N: usize, S: Sink<T>> Producer<T, N, S> {
+impl<T, const N: usize, S: Spout<T>> Producer<T, N, S> {
     /// Push an item to this producer's ring.
     ///
     /// This is the hot path - runs at ~4.6 Gelem/s with `no-atomics`.
@@ -80,7 +81,7 @@ impl<T, const N: usize, S: Sink<T>> Producer<T, N, S> {
     }
 }
 
-impl<T, const N: usize> Producer<T, N, DropSink> {
+impl<T, const N: usize> Producer<T, N, DropSpout> {
     fn new() -> Self {
         Self {
             ring: SpillRing::new(),
@@ -88,7 +89,7 @@ impl<T, const N: usize> Producer<T, N, DropSink> {
     }
 }
 
-impl<T, const N: usize, S: Sink<T>> Producer<T, N, S> {
+impl<T, const N: usize, S: Spout<T>> Producer<T, N, S> {
     fn with_sink(sink: S) -> Self {
         Self {
             ring: SpillRing::with_sink(sink),
@@ -100,11 +101,11 @@ impl<T, const N: usize, S: Sink<T>> Producer<T, N, S> {
 ///
 /// Collects producer rings and provides drain functionality.
 /// Use this when you need manual control over when items are consumed.
-pub struct Consumer<T, const N: usize, S: Sink<T> = DropSink> {
+pub struct Consumer<T, const N: usize, S: Spout<T> = DropSpout> {
     rings: Vec<SpillRing<T, N, S>>,
 }
 
-impl<T, const N: usize, S: Sink<T>> Consumer<T, N, S> {
+impl<T, const N: usize, S: Spout<T>> Consumer<T, N, S> {
     fn new() -> Self {
         Self { rings: Vec::new() }
     }
@@ -116,7 +117,7 @@ impl<T, const N: usize, S: Sink<T>> Consumer<T, N, S> {
     /// Drain all items from all rings into a sink.
     ///
     /// Items are drained in producer order, then FIFO within each producer.
-    pub fn drain<Sink2: Sink<T>>(&mut self, sink: &mut Sink2) {
+    pub fn drain<Spout2: Spout<T>>(&mut self, sink: &mut Spout2) {
         for ring in &mut self.rings {
             sink.send_all(ring.drain());
         }
@@ -143,12 +144,12 @@ impl<T, const N: usize, S: Sink<T>> Consumer<T, N, S> {
 ///
 /// Creates independent producers that each own a [`SpillRing`] running at full speed.
 /// No shared state, no contention on the hot path.
-pub struct MpscRing<T, const N: usize, S: Sink<T> = DropSink> {
+pub struct MpscRing<T, const N: usize, S: Spout<T> = DropSpout> {
     _marker: core::marker::PhantomData<(T, S)>,
 }
 
-impl<T, const N: usize> MpscRing<T, N, DropSink> {
-    /// Create producers with default `DropSink` (items dropped on overflow).
+impl<T, const N: usize> MpscRing<T, N, DropSpout> {
+    /// Create producers with default `DropSpout` (items dropped on overflow).
     ///
     /// Each producer owns its own ring running at full speed.
     /// Items are dropped on overflow and when the producer is dropped.
@@ -185,7 +186,8 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     /// # Example
     ///
     /// ```
-    /// use spill_ring::{MpscRing, CollectSink, collect};
+    /// use spill_ring::{MpscRing, collect};
+    /// use spout::CollectSpout;
     /// use std::thread;
     ///
     /// let (producers, mut consumer) = MpscRing::<u64, 256>::with_consumer(4);
@@ -206,7 +208,7 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     ///
     /// collect(finished, &mut consumer);
     ///
-    /// let mut sink = CollectSink::new();
+    /// let mut sink = CollectSpout::new();
     /// consumer.drain(&mut sink);
     /// ```
     pub fn with_consumer(num_producers: usize) -> (Vec<Producer<T, N>>, Consumer<T, N>) {
@@ -230,7 +232,7 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     /// let consumer = pool.into_consumer();
     /// ```
     #[cfg(feature = "std")]
-    pub fn pooled(num_workers: usize) -> WorkerPool<T, N, DropSink>
+    pub fn pooled(num_workers: usize) -> WorkerPool<T, N, DropSpout>
     where
         T: Send + 'static,
     {
@@ -238,7 +240,7 @@ impl<T, const N: usize> MpscRing<T, N, DropSink> {
     }
 }
 
-impl<T, const N: usize, S: Sink<T> + Clone> MpscRing<T, N, S> {
+impl<T, const N: usize, S: Spout<T> + Clone> MpscRing<T, N, S> {
     /// Create producers with a shared sink for handling evictions.
     ///
     /// Each producer gets a clone of the sink. Items overflow to the sink
@@ -247,15 +249,16 @@ impl<T, const N: usize, S: Sink<T> + Clone> MpscRing<T, N, S> {
     /// # Example
     ///
     /// ```
-    /// use spill_ring::{MpscRing, CollectSink, ProducerSink};
+    /// use spill_ring::MpscRing;
+    /// use spout::{CollectSpout, ProducerSpout};
     ///
-    /// // Each producer gets its own CollectSink
-    /// let sink = ProducerSink::new(|_id| CollectSink::<u64>::new());
+    /// // Each producer gets its own CollectSpout
+    /// let sink = ProducerSpout::new(|_id| CollectSpout::<u64>::new());
     /// let producers = MpscRing::<u64, 64, _>::with_sink(4, sink);
     ///
     /// for producer in producers {
     ///     producer.push(42);
-    ///     // Items flush to sink on drop
+    ///     // Items flush to spout on drop
     /// }
     /// ```
     pub fn with_sink(num_producers: usize, sink: S) -> Vec<Producer<T, N, S>> {
@@ -282,7 +285,7 @@ impl<T, const N: usize, S: Sink<T> + Clone> MpscRing<T, N, S> {
 /// Collect producers back into a consumer for draining.
 ///
 /// This is a helper to reunite producers with their consumer after threads complete.
-pub fn collect<T, const N: usize, S: Sink<T>>(
+pub fn collect<T, const N: usize, S: Spout<T>>(
     producers: impl IntoIterator<Item = Producer<T, N, S>>,
     consumer: &mut Consumer<T, N, S>,
 ) {
@@ -293,7 +296,7 @@ pub fn collect<T, const N: usize, S: Sink<T>>(
 
 #[cfg(feature = "std")]
 mod worker_pool {
-    use super::{Consumer, DropSink, Sink, SpillRing, Vec};
+    use super::{Consumer, DropSpout, SpillRing, Spout, Vec};
     use core::mem::MaybeUninit;
     use std::sync::mpsc::{Receiver, Sender, channel};
     use std::sync::{Arc, Barrier};
@@ -310,23 +313,23 @@ mod worker_pool {
     /// This is a convenience API for simple use cases. For maximum performance,
     /// use the pattern from `mpsc_prewarmed` in the benchmarks which keeps the
     /// work loop in user code where the compiler can fully optimize it.
-    pub struct WorkerPool<T, const N: usize, S: Sink<T> = DropSink> {
+    pub struct WorkerPool<T, const N: usize, S: Spout<T> = DropSpout> {
         cmd_txs: Vec<Sender<u64>>,
         handles: Vec<Option<thread::JoinHandle<SpillRing<T, N, S>>>>,
         start_barrier: Arc<Barrier>,
         done_barrier: Arc<Barrier>,
     }
 
-    impl<T: Send + 'static, const N: usize> WorkerPool<T, N, DropSink> {
+    impl<T: Send + 'static, const N: usize> WorkerPool<T, N, DropSpout> {
         /// Create a new pool with the specified number of persistent threads.
         ///
         /// All threads are spawned and cache-warmed before this returns.
         pub fn new(num_workers: usize) -> Self {
-            Self::with_sink(num_workers, DropSink)
+            Self::with_sink(num_workers, DropSpout)
         }
     }
 
-    impl<T: Send + 'static, const N: usize, S: Sink<T> + Clone + Send + 'static> WorkerPool<T, N, S> {
+    impl<T: Send + 'static, const N: usize, S: Spout<T> + Clone + Send + 'static> WorkerPool<T, N, S> {
         /// Create a new pool with a custom sink for evictions.
         ///
         /// All threads are spawned and cache-warmed before this returns.
@@ -399,7 +402,7 @@ mod worker_pool {
         }
     }
 
-    impl<T: Send + 'static, const N: usize, S: Sink<T> + Send + 'static> WorkerPool<T, N, S> {
+    impl<T: Send + 'static, const N: usize, S: Spout<T> + Send + 'static> WorkerPool<T, N, S> {
         /// Get the number of workers in the pool.
         #[inline]
         pub fn num_rings(&self) -> usize {
@@ -453,7 +456,7 @@ mod worker_pool {
         }
     }
 
-    impl<T, const N: usize, S: Sink<T>> Drop for WorkerPool<T, N, S> {
+    impl<T, const N: usize, S: Spout<T>> Drop for WorkerPool<T, N, S> {
         fn drop(&mut self) {
             self.cmd_txs.clear();
             for handle in &mut self.handles {
@@ -471,13 +474,13 @@ pub use worker_pool::WorkerPool;
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
-    use spout::CollectSink;
+    use spout::CollectSpout;
     use std::sync::{Arc, Mutex};
     use std::vec;
 
     #[test]
     fn basic_mpsc() {
-        let collected = Arc::new(Mutex::new(CollectSink::new()));
+        let collected = Arc::new(Mutex::new(CollectSpout::new()));
         let producers = MpscRing::<u64, 8, _>::with_sink(2, collected.clone());
 
         // Producer 0
@@ -501,7 +504,7 @@ mod tests {
 
     #[test]
     fn producer_overflow_to_sink() {
-        let collected = Arc::new(Mutex::new(CollectSink::new()));
+        let collected = Arc::new(Mutex::new(CollectSpout::new()));
 
         let producers = MpscRing::<u64, 4, _>::with_sink(1, collected.clone());
         let producer = producers.into_iter().next().unwrap();
@@ -521,7 +524,7 @@ mod tests {
 
     #[test]
     fn empty_producers_drop_sink() {
-        // With DropSink (default), items just get dropped
+        // With DropSpout (default), items just get dropped
         let producers = MpscRing::<u64, 8>::new(4);
         assert_eq!(producers.len(), 4);
         for p in &producers {
@@ -531,7 +534,7 @@ mod tests {
 
     #[test]
     fn single_producer() {
-        let collected = Arc::new(Mutex::new(CollectSink::new()));
+        let collected = Arc::new(Mutex::new(CollectSpout::new()));
         let producers = MpscRing::<u64, 16, _>::with_sink(1, collected.clone());
 
         let producer = producers.into_iter().next().unwrap();
@@ -556,7 +559,7 @@ mod tests {
             pool.run(50);
 
             let mut consumer = pool.into_consumer();
-            let mut sink = CollectSink::new();
+            let mut sink = CollectSpout::new();
             consumer.drain(&mut sink);
 
             let items = sink.into_items();
@@ -571,7 +574,7 @@ mod tests {
             pool.run(100);
 
             let mut consumer = pool.into_consumer();
-            let mut sink = CollectSink::new();
+            let mut sink = CollectSpout::new();
             consumer.drain(&mut sink);
 
             // Only last 8 items should remain in ring
@@ -601,7 +604,7 @@ mod tests {
             pool.run(10);
 
             let mut consumer = pool.into_consumer();
-            let mut sink = CollectSink::new();
+            let mut sink = CollectSpout::new();
             consumer.drain(&mut sink);
 
             // Should have 40 items total (2 rings × 20 items each)

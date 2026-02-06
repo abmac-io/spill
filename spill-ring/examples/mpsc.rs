@@ -1,12 +1,12 @@
 //! MPSC example: Multiple producers write sensor data, merged and flushed to file.
 //!
 //! Demonstrates zero-overhead MPSC with file I/O and checksum verification.
-//! Each producer runs independently at full speed, data flushes to shared sink.
+//! Each producer runs independently at full speed, data flushes to shared spout.
 //!
 //! Run with: cargo run --example mpsc
 
 use spill_ring::MpscRing;
-use spout::Sink;
+use spout::Spout;
 use std::{
     fs::File,
     hash::{DefaultHasher, Hash, Hasher},
@@ -42,24 +42,24 @@ impl SensorReading {
     }
 }
 
-/// Shared sink state protected by mutex.
-struct SharedSinkInner {
+/// Shared spout state protected by mutex.
+struct SharedSpoutInner {
     writer: BufWriter<File>,
     hashers: Vec<DefaultHasher>, // Per-producer hashers
     count: u64,
 }
 
-/// Thread-safe sink for evictions from all producers.
+/// Thread-safe spout for evictions from all producers.
 #[derive(Clone)]
-struct SharedFileSink {
-    inner: Arc<Mutex<SharedSinkInner>>,
+struct SharedFileSpout {
+    inner: Arc<Mutex<SharedSpoutInner>>,
 }
 
-impl SharedFileSink {
+impl SharedFileSpout {
     fn new(path: &str, num_producers: usize) -> std::io::Result<Self> {
         let file = File::create(path)?;
         Ok(Self {
-            inner: Arc::new(Mutex::new(SharedSinkInner {
+            inner: Arc::new(Mutex::new(SharedSpoutInner {
                 writer: BufWriter::new(file),
                 hashers: (0..num_producers).map(|_| DefaultHasher::new()).collect(),
                 count: 0,
@@ -86,7 +86,7 @@ impl SharedFileSink {
     }
 }
 
-impl Sink<SensorReading> for SharedFileSink {
+impl Spout<SensorReading> for SharedFileSpout {
     fn send(&mut self, item: SensorReading) {
         let mut inner = self.inner.lock().unwrap();
         let producer_id = item.sensor_id as usize;
@@ -117,12 +117,12 @@ fn main() -> std::io::Result<()> {
     );
     println!();
 
-    // Create shared sink for evictions - all producers write to same file
-    let sink = SharedFileSink::new("mpsc_output.bin", NUM_PRODUCERS)?;
-    let sink_ref = sink.clone();
+    // Create shared spout for evictions - all producers write to same file
+    let spout = SharedFileSpout::new("mpsc_output.bin", NUM_PRODUCERS)?;
+    let spout_ref = spout.clone();
 
-    // Create MPSC ring - each producer gets a clone of the sink
-    let producers = MpscRing::<SensorReading, RING_CAPACITY, _>::with_sink(NUM_PRODUCERS, sink);
+    // Create MPSC ring - each producer gets a clone of the spout
+    let producers = MpscRing::<SensorReading, RING_CAPACITY, _>::with_sink(NUM_PRODUCERS, spout);
 
     // Track input checksums per-producer (order within producer is preserved)
     let input_checksums: Vec<Arc<AtomicU64>> = (0..NUM_PRODUCERS)
@@ -130,7 +130,7 @@ fn main() -> std::io::Result<()> {
         .collect();
 
     // Spawn producers - each runs at full no-atomics speed
-    // Items flush to shared sink on overflow and when producer drops
+    // Items flush to shared spout on overflow and when producer drops
     thread::scope(|s| {
         for (producer_id, producer) in producers.into_iter().enumerate() {
             let checksum_slot = Arc::clone(&input_checksums[producer_id]);
@@ -149,21 +149,21 @@ fn main() -> std::io::Result<()> {
 
                 // Store this producer's checksum
                 checksum_slot.store(hasher.finish(), Ordering::Relaxed);
-                // Producer drops here, remaining items flush to sink
+                // Producer drops here, remaining items flush to spout
             });
         }
     });
 
-    sink_ref.flush_inner();
+    spout_ref.flush_inner();
 
     println!("Results:");
     println!("  Items generated:  {}", TOTAL_READINGS);
-    println!("  Items to file:    {}", sink_ref.count());
+    println!("  Items to file:    {}", spout_ref.count());
     println!();
 
     // Verify per-producer checksums (order within each producer preserved)
     println!("Per-producer checksum verification:");
-    let output_checksums = sink_ref.get_checksums();
+    let output_checksums = spout_ref.get_checksums();
     let mut all_match = true;
     for i in 0..NUM_PRODUCERS {
         let input = input_checksums[i].load(Ordering::Relaxed);

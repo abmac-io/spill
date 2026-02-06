@@ -5,7 +5,7 @@
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use spill_ring::{MpscRing, SpillRing, collect};
-use spout::{CollectSink, DropSink, ProducerSink, Sink};
+use spout::{CollectSpout, DropSpout, ProducerSpout, Spout};
 use std::{
     sync::{
         Arc,
@@ -84,7 +84,7 @@ fn mpsc_full_cycle(c: &mut Criterion) {
                     });
 
                     collect(finished, &mut consumer);
-                    let mut sink = CollectSink::new();
+                    let mut sink = CollectSpout::new();
                     consumer.drain(&mut sink);
                     black_box(sink.into_items().len())
                 })
@@ -136,7 +136,7 @@ fn mpsc_vs_single(c: &mut Criterion) {
             });
 
             collect(finished, &mut consumer);
-            let mut sink = CollectSink::new();
+            let mut sink = CollectSpout::new();
             consumer.drain(&mut sink);
             black_box(sink.into_items().len())
         })
@@ -189,7 +189,7 @@ fn mpsc_scaling(c: &mut Criterion) {
     group.finish();
 }
 
-/// Compare ProducerSink vs manual custom sink implementation.
+/// Compare ProducerSpout vs manual custom sink implementation.
 fn producer_sink_overhead(c: &mut Criterion) {
     let mut group = c.benchmark_group("producer_sink_overhead");
 
@@ -198,10 +198,10 @@ fn producer_sink_overhead(c: &mut Criterion) {
     let total = iterations_per_producer * num_producers as u64;
     group.throughput(Throughput::Elements(total));
 
-    // Using ProducerSink helper - sinks auto-flush on drop, no manual drain needed
+    // Using ProducerSpout helper - sinks auto-flush on drop, no manual drain needed
     group.bench_function("producer_sink", |b| {
         b.iter(|| {
-            let sink = ProducerSink::new(|_id| CollectSink::<u64>::new());
+            let sink = ProducerSpout::new(|_id| CollectSpout::<u64>::new());
             let producers = MpscRing::<u64, 1024, _>::with_sink(num_producers, sink);
 
             thread::scope(|s| {
@@ -219,9 +219,9 @@ fn producer_sink_overhead(c: &mut Criterion) {
         })
     });
 
-    // Manual custom sink (what user would write without ProducerSink)
+    // Manual custom sink (what user would write without ProducerSpout)
     struct ManualSink {
-        inner: Option<CollectSink<u64>>,
+        inner: Option<CollectSpout<u64>>,
         #[allow(dead_code)]
         producer_id: usize,
         next_id: Arc<AtomicUsize>,
@@ -238,10 +238,10 @@ fn producer_sink_overhead(c: &mut Criterion) {
         }
     }
 
-    impl Sink<u64> for ManualSink {
+    impl Spout<u64> for ManualSink {
         fn send(&mut self, item: u64) {
             if self.inner.is_none() {
-                self.inner = Some(CollectSink::new());
+                self.inner = Some(CollectSpout::new());
             }
             self.inner.as_mut().unwrap().send(item);
         }
@@ -276,7 +276,7 @@ fn producer_sink_overhead(c: &mut Criterion) {
         })
     });
 
-    // No sink (DropSink) baseline - using with_consumer for manual drain
+    // No sink (DropSpout) baseline - using with_consumer for manual drain
     group.bench_function("drop_sink", |b| {
         b.iter(|| {
             let (producers, mut consumer) = MpscRing::<u64, 1024>::with_consumer(num_producers);
@@ -300,7 +300,7 @@ fn producer_sink_overhead(c: &mut Criterion) {
 
             collect(finished, &mut consumer);
             let count = consumer.len();
-            consumer.drain(&mut DropSink);
+            consumer.drain(&mut DropSpout);
             black_box(count)
         })
     });

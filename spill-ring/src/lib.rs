@@ -13,12 +13,12 @@ mod traits;
 mod tests;
 
 //pub use spout::{
-//    BatchSink, CollectSink, DropSink, Flush, FnFlushSink, FnSink, ProducerSink, ReduceSink, Sink,
-//    sink,
+//    BatchSpout, CollectSpout, DropSpout, Flush, FnFlushSpout, FnSpout, ProducerSpout, ReduceSpout,
+//    Spout, spout,
 //};
 //
 //#[cfg(feature = "std")]
-//pub use spout::ChannelSink;
+//pub use spout::ChannelSpout;
 
 pub use iter::{SpillRingIter, SpillRingIterMut};
 #[cfg(feature = "std")]
