@@ -20,8 +20,6 @@ spout = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
-compio = { version = "0.17", features = ["macros"] }
-libc = "0.2"
 
 [[bench]]
 name = "single_thread"
@@ -42,5 +40,13 @@ harness = false
 required-features = ["std"]
 
 [[example]]
-name = "compio_file_copy"
+name = "spsc"
+required-features = ["std"]
+
+[[example]]
+name = "mpsc"
+required-features = ["std"]
+
+[[example]]
+name = "backpressure"
 required-features = ["std"]
