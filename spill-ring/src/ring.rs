@@ -45,6 +45,21 @@ pub struct SpillRing<T, const N: usize, S: Spout<T> = DropSpout> {
 unsafe impl<T: Send, const N: usize, S: Spout<T> + Send> Send for SpillRing<T, N, S> {}
 
 impl<T, const N: usize> SpillRing<T, N, DropSpout> {
+    /// Create a builder for configuring a [`SpillRing`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use spill_ring::SpillRing;
+    ///
+    /// let ring = SpillRing::<u64, 256>::builder()
+    ///     .cold()
+    ///     .build();
+    /// ```
+    pub fn builder() -> crate::builder::SpillRingBuilder<T, N> {
+        crate::builder::SpillRingBuilder::new()
+    }
+
     /// Create a new ring buffer with pre-warmed cache (evicted items are dropped).
     #[must_use]
     pub fn new() -> Self {

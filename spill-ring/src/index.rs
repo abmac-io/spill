@@ -6,11 +6,11 @@ use core::cell::UnsafeCell;
 
 /// Interior mutable cell for spout.
 #[repr(transparent)]
-pub struct SpoutCell<S>(UnsafeCell<S>);
+pub(crate) struct SpoutCell<S>(UnsafeCell<S>);
 
 impl<S> SpoutCell<S> {
     #[inline]
-    pub const fn new(sink: S) -> Self {
+    pub(crate) const fn new(sink: S) -> Self {
         Self(UnsafeCell::new(sink))
     }
 
@@ -18,18 +18,17 @@ impl<S> SpoutCell<S> {
     /// Caller must ensure exclusive access.
     #[inline]
     #[allow(clippy::mut_from_ref)]
-    pub unsafe fn get_mut_unchecked(&self) -> &mut S {
+    pub(crate) unsafe fn get_mut_unchecked(&self) -> &mut S {
         unsafe { &mut *self.0.get() }
     }
 
     #[inline]
-    #[allow(clippy::mut_from_ref)]
-    pub fn get_ref(&self) -> &S {
+    pub(crate) fn get_ref(&self) -> &S {
         unsafe { &*self.0.get() }
     }
 
     #[inline]
-    pub fn get_mut(&mut self) -> &mut S {
+    pub(crate) fn get_mut(&mut self) -> &mut S {
         self.0.get_mut()
     }
 }
@@ -44,7 +43,7 @@ mod atomic {
 
     /// Atomic index using Acquire/Release ordering.
     #[repr(transparent)]
-    pub struct AtomicIndex(AtomicUsize);
+    pub(crate) struct AtomicIndex(AtomicUsize);
 
     impl AtomicIndex {
         #[inline]
@@ -91,9 +90,8 @@ mod non_atomic {
 
     /// Non-atomic index for single-context use.
     #[repr(transparent)]
-    pub struct CellIndex(Cell<usize>);
+    pub(crate) struct CellIndex(Cell<usize>);
 
-    #[allow(dead_code)]
     impl CellIndex {
         #[inline]
         pub const fn new(val: usize) -> Self {
@@ -102,11 +100,6 @@ mod non_atomic {
 
         #[inline]
         pub fn load(&self) -> usize {
-            self.0.get()
-        }
-
-        #[inline]
-        pub fn load_relaxed(&self) -> usize {
             self.0.get()
         }
 
@@ -129,5 +122,5 @@ mod non_atomic {
     }
 }
 
-pub use atomic::AtomicIndex;
-pub use non_atomic::CellIndex;
+pub(crate) use atomic::AtomicIndex;
+pub(crate) use non_atomic::CellIndex;

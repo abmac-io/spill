@@ -64,6 +64,21 @@ unsafe impl<T: Send, const N: usize, S: Spout<T> + Send> Sync for SpscRing<T, N,
 // ── Constructors ─────────────────────────────────────────────────────
 
 impl<T, const N: usize> SpscRing<T, N, DropSpout> {
+    /// Create a builder for configuring a [`SpscRing`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use spill_ring::SpscRing;
+    ///
+    /// let ring = SpscRing::<u64, 256>::builder()
+    ///     .cold()
+    ///     .build();
+    /// ```
+    pub fn builder() -> crate::builder::SpscRingBuilder<T, N> {
+        crate::builder::SpscRingBuilder::new()
+    }
+
     /// Create a new SPSC ring with pre-warmed cache (evicted items are dropped).
     #[must_use]
     pub fn new() -> Self {
@@ -792,6 +807,158 @@ impl<T, const N: usize, S: Spout<T>> RingConsumer<T> for SpscRing<T, N, S> {
         SpscRing::peek(self)
     }
 }
+
+// ── SPSC Producer/Consumer handles ───────────────────────────────────
+
+#[cfg(feature = "std")]
+mod handles {
+    extern crate alloc;
+    use alloc::sync::Arc;
+    use core::mem::MaybeUninit;
+    use spout::Spout;
+
+    use super::SpscRing;
+
+    impl<T: Send, const N: usize, S: Spout<T> + Send> SpscRing<T, N, S> {
+        /// Split into typed producer and consumer handles for safe concurrent use.
+        ///
+        /// The producer can only push; the consumer can only pop. Neither handle
+        /// is `Clone`, enforcing the single-producer/single-consumer contract at
+        /// compile time.
+        ///
+        /// Both handles hold an `Arc` to the underlying ring.
+        ///
+        /// # Example
+        ///
+        /// ```
+        /// use spill_ring::SpscRing;
+        /// use std::thread;
+        ///
+        /// let (producer, consumer) = SpscRing::<u64, 256>::new().split();
+        ///
+        /// let t = thread::spawn(move || {
+        ///     for i in 0..100 {
+        ///         producer.push(i);
+        ///     }
+        /// });
+        ///
+        /// // Consumer reads from another context
+        /// t.join().unwrap();
+        /// while let Some(val) = consumer.pop() {
+        ///     // process val
+        /// }
+        /// ```
+        pub fn split(self) -> (SpscProducer<T, N, S>, SpscConsumer<T, N, S>) {
+            let arc = Arc::new(self);
+            (
+                SpscProducer {
+                    ring: Arc::clone(&arc),
+                },
+                SpscConsumer { ring: arc },
+            )
+        }
+    }
+
+    /// Producer handle for a [`SpscRing`]. Can only push.
+    ///
+    /// Created by [`SpscRing::split()`]. Not `Clone` — only one producer
+    /// is permitted per ring.
+    pub struct SpscProducer<T, const N: usize, S: Spout<T>> {
+        ring: Arc<SpscRing<T, N, S>>,
+    }
+
+    // Safety: SpscProducer is Send if T and S are Send.
+    // It is NOT Sync — the producer handle should only be used from one thread.
+    unsafe impl<T: Send, const N: usize, S: Spout<T> + Send> Send for SpscProducer<T, N, S> {}
+
+    impl<T: Send, const N: usize, S: Spout<T> + Send> SpscProducer<T, N, S> {
+        /// Push an item. If the ring is full, evicts the oldest item to the spout.
+        #[inline]
+        pub fn push(&self, item: T) {
+            self.ring.push(item);
+        }
+
+        /// Number of items currently in the ring.
+        #[inline]
+        pub fn len(&self) -> usize {
+            self.ring.len()
+        }
+
+        /// True if the ring is empty.
+        #[inline]
+        pub fn is_empty(&self) -> bool {
+            self.ring.is_empty()
+        }
+
+        /// True if the ring is full.
+        #[inline]
+        pub fn is_full(&self) -> bool {
+            self.ring.is_full()
+        }
+
+        /// Buffer capacity.
+        #[inline]
+        pub fn capacity(&self) -> usize {
+            self.ring.capacity()
+        }
+    }
+
+    /// Consumer handle for a [`SpscRing`]. Can only pop.
+    ///
+    /// Created by [`SpscRing::split()`]. Not `Clone` — only one consumer
+    /// is permitted per ring.
+    pub struct SpscConsumer<T, const N: usize, S: Spout<T>> {
+        ring: Arc<SpscRing<T, N, S>>,
+    }
+
+    // Safety: SpscConsumer is Send if T and S are Send.
+    // It is NOT Sync — the consumer handle should only be used from one thread.
+    unsafe impl<T: Send, const N: usize, S: Spout<T> + Send> Send for SpscConsumer<T, N, S> {}
+
+    impl<T: Send, const N: usize, S: Spout<T> + Send> SpscConsumer<T, N, S> {
+        /// Pop the oldest item.
+        #[inline]
+        pub fn pop(&self) -> Option<T> {
+            self.ring.pop()
+        }
+
+        /// Bulk-pop up to `buf.len()` items concurrently.
+        #[inline]
+        pub fn pop_slice(&self, buf: &mut [MaybeUninit<T>]) -> usize
+        where
+            T: Copy,
+        {
+            self.ring.pop_slice(buf)
+        }
+
+        /// Number of items currently in the ring.
+        #[inline]
+        pub fn len(&self) -> usize {
+            self.ring.len()
+        }
+
+        /// True if the ring is empty.
+        #[inline]
+        pub fn is_empty(&self) -> bool {
+            self.ring.is_empty()
+        }
+
+        /// True if the ring is full.
+        #[inline]
+        pub fn is_full(&self) -> bool {
+            self.ring.is_full()
+        }
+
+        /// Buffer capacity.
+        #[inline]
+        pub fn capacity(&self) -> usize {
+            self.ring.capacity()
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+pub use handles::{SpscConsumer, SpscProducer};
 
 // ── Layout test ──────────────────────────────────────────────────────
 
