@@ -1,5 +1,6 @@
 extern crate std;
 
+use core::mem::MaybeUninit;
 use std::{vec, vec::Vec};
 
 use crate::SpillRing;
@@ -461,6 +462,78 @@ fn extend_from_slice_delegates() {
     ring.extend_from_slice(&[1, 2, 3]);
     assert_eq!(ring.len(), 3);
     assert_eq!(ring.pop_mut(), Some(1));
+}
+
+// ── pop_slice tests ──────────────────────────────────────────────────
+
+#[test]
+fn pop_slice_empty() {
+    let mut ring: SpillRing<u32, 8> = SpillRing::new();
+    let mut buf = [MaybeUninit::uninit(); 4];
+    assert_eq!(ring.pop_slice(&mut buf), 0);
+}
+
+#[test]
+fn pop_slice_partial() {
+    let mut ring: SpillRing<u32, 8> = SpillRing::new();
+    ring.push_slice(&[10, 20, 30]);
+    let mut buf = [MaybeUninit::uninit(); 2];
+    let n = ring.pop_slice(&mut buf);
+    assert_eq!(n, 2);
+    assert_eq!(unsafe { buf[0].assume_init() }, 10);
+    assert_eq!(unsafe { buf[1].assume_init() }, 20);
+    assert_eq!(ring.len(), 1);
+    assert_eq!(ring.pop_mut(), Some(30));
+}
+
+#[test]
+fn pop_slice_exact() {
+    let mut ring: SpillRing<u32, 8> = SpillRing::new();
+    ring.push_slice(&[1, 2, 3, 4]);
+    let mut buf = [MaybeUninit::uninit(); 4];
+    let n = ring.pop_slice(&mut buf);
+    assert_eq!(n, 4);
+    let vals: Vec<u32> = buf.iter().map(|m| unsafe { m.assume_init() }).collect();
+    assert_eq!(vals, vec![1, 2, 3, 4]);
+    assert!(ring.is_empty());
+}
+
+#[test]
+fn pop_slice_more_than_available() {
+    let mut ring: SpillRing<u32, 8> = SpillRing::new();
+    ring.push_slice(&[5, 6]);
+    let mut buf = [MaybeUninit::uninit(); 10];
+    let n = ring.pop_slice(&mut buf);
+    assert_eq!(n, 2);
+    assert_eq!(unsafe { buf[0].assume_init() }, 5);
+    assert_eq!(unsafe { buf[1].assume_init() }, 6);
+    assert!(ring.is_empty());
+}
+
+#[test]
+fn pop_slice_wraparound() {
+    let mut ring: SpillRing<u32, 4> = SpillRing::new();
+    // Fill and pop to advance head past slot 0.
+    ring.push_slice(&[0, 0, 0]);
+    let _ = ring.pop_mut(); // head=1
+    let _ = ring.pop_mut(); // head=2
+    let _ = ring.pop_mut(); // head=3, tail=3
+    // Now push 4 items wrapping around: slots [3,0,1,2]
+    ring.push_slice(&[10, 20, 30, 40]);
+    let mut buf = [MaybeUninit::uninit(); 4];
+    let n = ring.pop_slice(&mut buf);
+    assert_eq!(n, 4);
+    let vals: Vec<u32> = buf.iter().map(|m| unsafe { m.assume_init() }).collect();
+    assert_eq!(vals, vec![10, 20, 30, 40]);
+}
+
+#[test]
+fn pop_slice_empty_buf() {
+    let mut ring: SpillRing<u32, 8> = SpillRing::new();
+    ring.push_slice(&[1, 2, 3]);
+    let mut buf: [MaybeUninit<u32>; 0] = [];
+    assert_eq!(ring.pop_slice(&mut buf), 0);
+    assert_eq!(ring.len(), 3);
 }
 
 // cache_line_layout test lives in ring.rs (needs private field access for offset_of!)

@@ -34,6 +34,7 @@ pub(crate) const MAX_CAPACITY: usize = 1 << 20;
 ///
 /// Single-threaded ring using `Cell`-based indices. Not `Sync` — for concurrent
 /// SPSC use, see [`SpscRing`](crate::SpscRing).
+#[repr(C)]
 pub struct SpillRing<T, const N: usize, S: Spout<T> = DropSpout> {
     pub(crate) head: CellIndex,
     pub(crate) tail: CellIndex,
@@ -248,6 +249,48 @@ impl<T, const N: usize, S: Spout<T>> SpillRing<T, N, S> {
         T: Copy,
     {
         self.push_slice(items);
+    }
+
+    /// Bulk-pop up to `buf.len()` items into a slice. Returns the count popped.
+    ///
+    /// Uses `memcpy` internally — at most two copies (from head to buffer end + wrap).
+    #[inline]
+    pub fn pop_slice(&mut self, buf: &mut [MaybeUninit<T>]) -> usize
+    where
+        T: Copy,
+    {
+        if buf.is_empty() {
+            return 0;
+        }
+
+        let head = self.head.load_mut();
+        let tail = self.tail.load_mut();
+        let avail = tail.wrapping_sub(head);
+        let count = buf.len().min(avail);
+        if count == 0 {
+            return 0;
+        }
+
+        let head_idx = head & (N - 1);
+        let to_end = N - head_idx;
+
+        unsafe {
+            let src = self.buffer[head_idx].data.get() as *const T;
+            let dst = buf.as_mut_ptr() as *mut T;
+            if count <= to_end {
+                core::ptr::copy_nonoverlapping(src, dst, count);
+            } else {
+                core::ptr::copy_nonoverlapping(src, dst, to_end);
+                core::ptr::copy_nonoverlapping(
+                    self.buffer[0].data.get() as *const T,
+                    dst.add(to_end),
+                    count - to_end,
+                );
+            }
+        }
+
+        self.head.store_mut(head.wrapping_add(count));
+        count
     }
 
     /// Push an item then flush all to spout.

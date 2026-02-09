@@ -347,6 +347,131 @@ impl<T, const N: usize, S: Spout<T>> SpscRing<T, N, S> {
         self.push_slice(items);
     }
 
+    /// Bulk-pop up to `buf.len()` items with exclusive access. Returns count popped.
+    ///
+    /// Uses `memcpy` internally — at most two copies (from head to buffer end + wrap).
+    /// Accounts for `evict_head` in case `push(&self)` was used previously.
+    #[inline]
+    pub fn pop_slice_mut(&mut self, buf: &mut [MaybeUninit<T>]) -> usize
+    where
+        T: Copy,
+    {
+        if buf.is_empty() {
+            return 0;
+        }
+
+        let mut head = self.head.load_mut();
+        let evict = self.evict_head.load_mut();
+        if head < evict {
+            head = evict;
+        }
+        let tail = self.tail.load_mut();
+        let avail = tail.wrapping_sub(head);
+        let count = buf.len().min(avail);
+        if count == 0 {
+            self.head.store_mut(head);
+            self.evict_head.store_mut(head);
+            return 0;
+        }
+
+        let head_idx = head & (N - 1);
+        let to_end = N - head_idx;
+
+        unsafe {
+            let src = self.buffer[head_idx].data.get() as *const T;
+            let dst = buf.as_mut_ptr() as *mut T;
+            if count <= to_end {
+                core::ptr::copy_nonoverlapping(src, dst, count);
+            } else {
+                core::ptr::copy_nonoverlapping(src, dst, to_end);
+                core::ptr::copy_nonoverlapping(
+                    self.buffer[0].data.get() as *const T,
+                    dst.add(to_end),
+                    count - to_end,
+                );
+            }
+        }
+
+        head = head.wrapping_add(count);
+        self.head.store_mut(head);
+        self.evict_head.store_mut(head);
+        count
+    }
+
+    /// Bulk-pop up to `buf.len()` items concurrently. Returns count popped.
+    ///
+    /// Thread-safe for single-consumer use. Uses a seqlock-style double-read
+    /// of `evict_head` to detect producer evictions during the bulk read.
+    /// On conflict, retries with the updated head.
+    ///
+    /// Amortizes the cross-core cache-line RTT over the entire batch instead
+    /// of paying it per element.
+    #[inline]
+    pub fn pop_slice(&self, buf: &mut [MaybeUninit<T>]) -> usize
+    where
+        T: Copy,
+    {
+        if buf.is_empty() {
+            return 0;
+        }
+
+        loop {
+            let mut head = self.head.load_relaxed();
+
+            let evict = self.evict_head.load();
+            if head < evict {
+                head = evict;
+            }
+
+            let mut tail = self.cached_tail.get();
+            let cached_avail = tail.wrapping_sub(head);
+            if cached_avail == 0 || cached_avail > N {
+                tail = self.tail.load();
+                self.cached_tail.set(tail);
+                if head == tail {
+                    if head != self.head.load_relaxed() {
+                        self.head.store(head);
+                    }
+                    return 0;
+                }
+            }
+
+            let avail = tail.wrapping_sub(head);
+            let count = buf.len().min(avail);
+
+            // Speculative bulk read into buf.
+            let head_idx = head & (N - 1);
+            let to_end = N - head_idx;
+
+            unsafe {
+                let src = self.buffer[head_idx].data.get() as *const T;
+                let dst = buf.as_mut_ptr() as *mut T;
+                if count <= to_end {
+                    core::ptr::copy_nonoverlapping(src, dst, count);
+                } else {
+                    core::ptr::copy_nonoverlapping(src, dst, to_end);
+                    core::ptr::copy_nonoverlapping(
+                        self.buffer[0].data.get() as *const T,
+                        dst.add(to_end),
+                        count - to_end,
+                    );
+                }
+            }
+
+            core::sync::atomic::fence(core::sync::atomic::Ordering::Acquire);
+
+            // Validate: did the producer evict any of our slots?
+            let evict2 = self.evict_head.load_relaxed();
+            if evict2 > head {
+                // Producer overwrote slots we read — retry with new head.
+                continue;
+            }
+
+            self.head.store(head.wrapping_add(count));
+            return count;
+        }
+    }
+
     /// Push an item then flush all to spout.
     #[inline]
     pub fn push_and_flush(&mut self, item: T) {
