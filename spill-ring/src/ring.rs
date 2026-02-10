@@ -485,12 +485,12 @@ impl<T, const N: usize, S: Spout<T>> RingInfo for SpillRing<T, N, S> {
 
 impl<T, const N: usize, S: Spout<T>> RingProducer<T> for SpillRing<T, N, S> {
     #[inline]
-    fn try_push(&mut self, item: T) -> Result<(), T> {
+    fn try_push(&mut self, item: T) -> Result<(), crate::PushError<T>> {
         let tail = self.tail.load_mut();
         let head = self.head.load_mut();
 
         if tail.wrapping_sub(head) >= N {
-            return Err(item);
+            return Err(crate::PushError::Full(item));
         }
 
         unsafe {

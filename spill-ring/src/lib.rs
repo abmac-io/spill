@@ -4,6 +4,7 @@
 #![warn(missing_docs)]
 
 mod builder;
+mod error;
 mod index;
 mod iter;
 mod mpsc;
@@ -16,6 +17,7 @@ mod traits;
 mod tests;
 
 pub use builder::{SpillRingBuilder, SpscRingBuilder};
+pub use error::PushError;
 pub use iter::{SpillRingIter, SpillRingIterMut};
 pub use mpsc::{Consumer, MpscRing, Producer, collect};
 #[cfg(feature = "std")]
