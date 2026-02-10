@@ -1,5 +1,6 @@
 //! FromBytes derive macro implementation.
 
+use super::{disc_capacity, has_skip_attr, repr_int_type};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -29,13 +30,24 @@ fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
             }
         }
         Data::Enum(data) => {
-            if data.variants.len() > 256 {
+            let disc_type = repr_int_type(&input.attrs);
+            let disc_ident = disc_type
+                .clone()
+                .unwrap_or_else(|| syn::Ident::new("u8", proc_macro2::Span::call_site()));
+            let max_variants = disc_capacity(&disc_ident.to_string());
+            if data.variants.len() > max_variants {
                 return Err(syn::Error::new_spanned(
                     input,
-                    "FromBytes derive only supports enums with up to 256 variants",
+                    format!(
+                        "enum has {} variants but discriminant type `{}` supports at most {}. \
+                         Add #[repr(u16)], #[repr(u32)], etc. to increase capacity.",
+                        data.variants.len(),
+                        disc_ident,
+                        max_variants,
+                    ),
                 ));
             }
-            generate_enum(name, data)?
+            generate_enum(name, data, &disc_ident)?
         }
         Data::Union(_) => {
             return Err(syn::Error::new_spanned(
@@ -71,9 +83,15 @@ fn generate_struct(
                 .map(|f| {
                     let field_name = &f.ident;
                     let field_type = &f.ty;
-                    quote! {
-                        let (#field_name, consumed) = <#field_type as bytecast::FromBytes>::from_bytes(&buf[offset..])?;
-                        offset += consumed;
+                    if has_skip_attr(f) {
+                        quote! {
+                            let #field_name: #field_type = Default::default();
+                        }
+                    } else {
+                        quote! {
+                            let (#field_name, consumed) = <#field_type as bytecast::FromBytes>::from_bytes(&buf[offset..])?;
+                            offset += consumed;
+                        }
                     }
                 })
                 .collect();
@@ -92,9 +110,15 @@ fn generate_struct(
                     let field_name =
                         syn::Ident::new(&format!("field_{}", i), proc_macro2::Span::call_site());
                     let field_type = &f.ty;
-                    quote! {
-                        let (#field_name, consumed) = <#field_type as bytecast::FromBytes>::from_bytes(&buf[offset..])?;
-                        offset += consumed;
+                    if has_skip_attr(f) {
+                        quote! {
+                            let #field_name: #field_type = Default::default();
+                        }
+                    } else {
+                        quote! {
+                            let (#field_name, consumed) = <#field_type as bytecast::FromBytes>::from_bytes(&buf[offset..])?;
+                            offset += consumed;
+                        }
                     }
                 })
                 .collect();
@@ -119,19 +143,23 @@ fn generate_struct(
 // Enum deserialization
 // =============================================================================
 
-fn generate_enum(name: &syn::Ident, data: &syn::DataEnum) -> syn::Result<TokenStream2> {
+fn generate_enum(
+    name: &syn::Ident,
+    data: &syn::DataEnum,
+    disc_type: &syn::Ident,
+) -> syn::Result<TokenStream2> {
     let match_arms: Vec<_> = data
         .variants
         .iter()
         .enumerate()
         .map(|(idx, variant)| {
             let variant_name = &variant.ident;
-            let discriminant = idx as u8;
+            let idx_lit = syn::LitInt::new(&idx.to_string(), proc_macro2::Span::call_site());
 
             match &variant.fields {
                 Fields::Unit => {
                     quote! {
-                        #discriminant => Ok((#name::#variant_name, offset))
+                        #idx_lit => Ok((#name::#variant_name, offset))
                     }
                 }
                 Fields::Unnamed(fields) => {
@@ -159,7 +187,7 @@ fn generate_enum(name: &syn::Ident, data: &syn::DataEnum) -> syn::Result<TokenSt
                         .collect();
 
                     quote! {
-                        #discriminant => {
+                        #idx_lit => {
                             #(#field_reads)*
                             Ok((#name::#variant_name(#(#field_names),*), offset))
                         }
@@ -182,7 +210,7 @@ fn generate_enum(name: &syn::Ident, data: &syn::DataEnum) -> syn::Result<TokenSt
                     let field_names: Vec<_> = fields.named.iter().map(|f| &f.ident).collect();
 
                     quote! {
-                        #discriminant => {
+                        #idx_lit => {
                             #(#field_reads)*
                             Ok((#name::#variant_name { #(#field_names),* }, offset))
                         }
@@ -193,7 +221,7 @@ fn generate_enum(name: &syn::Ident, data: &syn::DataEnum) -> syn::Result<TokenSt
         .collect();
 
     Ok(quote! {
-        let (discriminant, consumed) = <u8 as bytecast::FromBytes>::from_bytes(&buf[offset..])?;
+        let (discriminant, consumed) = <#disc_type as bytecast::FromBytes>::from_bytes(&buf[offset..])?;
         offset += consumed;
 
         match discriminant {
