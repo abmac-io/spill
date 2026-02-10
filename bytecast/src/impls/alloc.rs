@@ -1,4 +1,9 @@
-use alloc::{string::String, vec::Vec};
+use alloc::{
+    borrow::{Cow, ToOwned},
+    collections::VecDeque,
+    string::String,
+    vec::Vec,
+};
 
 use crate::{BytesError, FromBytes, ToBytes};
 
@@ -118,6 +123,42 @@ impl<T: FromBytes> FromBytes for Vec<T> {
     }
 }
 
+// VecDeque<T> - same wire format as Vec<T>
+impl<T: ToBytes> ToBytes for VecDeque<T> {
+    const MAX_SIZE: Option<usize> = None;
+
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, BytesError> {
+        let len = self.len() as u32;
+        let mut offset = var_int::encode(len, buf)?;
+        for item in self {
+            offset += item.to_bytes(&mut buf[offset..])?;
+        }
+        Ok(offset)
+    }
+
+    fn byte_len(&self) -> Option<usize> {
+        let mut total = var_int::len(self.len() as u32);
+        for item in self {
+            total += item.byte_len()?;
+        }
+        Some(total)
+    }
+}
+
+impl<T: FromBytes> FromBytes for VecDeque<T> {
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
+        let (len, mut offset) = var_int::decode(buf)?;
+        let len = len as usize;
+        let mut deque = VecDeque::with_capacity(len);
+        for _ in 0..len {
+            let (item, n) = T::from_bytes(&buf[offset..])?;
+            deque.push_back(item);
+            offset += n;
+        }
+        Ok((deque, offset))
+    }
+}
+
 impl ToBytes for String {
     const MAX_SIZE: Option<usize> = None;
 
@@ -161,5 +202,76 @@ impl FromBytes for String {
             .into();
         offset += len;
         Ok((s, offset))
+    }
+}
+
+// Cow<'_, str> - same wire format as String
+impl ToBytes for Cow<'_, str> {
+    const MAX_SIZE: Option<usize> = None;
+
+    #[inline]
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, BytesError> {
+        let bytes = self.as_bytes();
+        let len = bytes.len() as u32;
+        let offset = var_int::encode(len, buf)?;
+
+        if buf.len() - offset < bytes.len() {
+            return Err(BytesError::BufferTooSmall {
+                needed: offset + bytes.len(),
+                available: buf.len(),
+            });
+        }
+        buf[offset..offset + bytes.len()].copy_from_slice(bytes);
+        Ok(offset + bytes.len())
+    }
+
+    #[inline]
+    fn byte_len(&self) -> Option<usize> {
+        Some(var_int::len(self.len() as u32) + self.len())
+    }
+}
+
+impl FromBytes for Cow<'_, str> {
+    #[inline]
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
+        let (s, n) = String::from_bytes(buf)?;
+        Ok((Cow::Owned(s), n))
+    }
+}
+
+// Cow<'_, [T]> - same wire format as Vec<T>
+impl<T: ToBytes> ToBytes for Cow<'_, [T]>
+where
+    [T]: ToOwned,
+{
+    const MAX_SIZE: Option<usize> = None;
+
+    #[inline]
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, BytesError> {
+        let slice: &[T] = self.as_ref();
+        let len = slice.len() as u32;
+        let mut offset = var_int::encode(len, buf)?;
+        for item in slice {
+            offset += item.to_bytes(&mut buf[offset..])?;
+        }
+        Ok(offset)
+    }
+
+    #[inline]
+    fn byte_len(&self) -> Option<usize> {
+        let slice: &[T] = self.as_ref();
+        let mut total = var_int::len(slice.len() as u32);
+        for item in slice {
+            total += item.byte_len()?;
+        }
+        Some(total)
+    }
+}
+
+impl<T: FromBytes + Clone> FromBytes for Cow<'_, [T]> {
+    #[inline]
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
+        let (vec, n) = Vec::<T>::from_bytes(buf)?;
+        Ok((Cow::Owned(vec), n))
     }
 }

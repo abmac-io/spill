@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{borrow::Cow, string::String, vec, vec::Vec};
 
 use super::{
     ByteCursor, ByteReader, ByteSerializer, FromBytes, FromBytesExt, ToBytes, ToBytesExt,
@@ -309,4 +309,118 @@ fn test_from_bytes_exact_trailing() {
     let buf = [0x78, 0x56, 0x34, 0x12, 0xFF]; // trailing byte
     let result = u32::from_bytes_exact(&buf);
     assert!(result.is_err());
+}
+
+// Cow tests
+#[test]
+fn test_cow_str_borrowed_roundtrip() {
+    let original: Cow<'_, str> = Cow::Borrowed("hello");
+    let mut buf = [0u8; 64];
+
+    let written = original.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 1 + 5); // varint len + bytes
+
+    let (decoded, consumed) = Cow::<'_, str>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, "hello");
+    assert_eq!(consumed, written);
+}
+
+#[test]
+fn test_cow_str_owned_roundtrip() {
+    let original: Cow<'_, str> = Cow::Owned(String::from("world"));
+    let mut buf = [0u8; 64];
+
+    let written = original.to_bytes(&mut buf).unwrap();
+    let (decoded, consumed) = Cow::<'_, str>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, "world");
+    assert_eq!(consumed, written);
+}
+
+#[test]
+fn test_cow_str_wire_compat_with_string() {
+    // Cow<str> and String should produce identical bytes
+    let s = String::from("compatible");
+    let c: Cow<'_, str> = Cow::Borrowed("compatible");
+
+    let mut buf_s = [0u8; 64];
+    let mut buf_c = [0u8; 64];
+    let n_s = s.to_bytes(&mut buf_s).unwrap();
+    let n_c = c.to_bytes(&mut buf_c).unwrap();
+
+    assert_eq!(n_s, n_c);
+    assert_eq!(&buf_s[..n_s], &buf_c[..n_c]);
+}
+
+#[test]
+fn test_cow_slice_roundtrip() {
+    let original: Cow<'_, [u32]> = Cow::Owned(vec![10, 20, 30]);
+    let mut buf = [0u8; 64];
+
+    let written = original.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 1 + 12); // varint len + 3*4
+
+    let (decoded, consumed) = Cow::<'_, [u32]>::from_bytes(&buf).unwrap();
+    assert_eq!(&*decoded, &[10, 20, 30]);
+    assert_eq!(consumed, written);
+}
+
+#[test]
+fn test_cow_slice_wire_compat_with_vec() {
+    let v: Vec<u32> = vec![1, 2, 3];
+    let c: Cow<'_, [u32]> = Cow::Owned(vec![1, 2, 3]);
+
+    let mut buf_v = [0u8; 64];
+    let mut buf_c = [0u8; 64];
+    let n_v = v.to_bytes(&mut buf_v).unwrap();
+    let n_c = c.to_bytes(&mut buf_c).unwrap();
+
+    assert_eq!(n_v, n_c);
+    assert_eq!(&buf_v[..n_v], &buf_c[..n_c]);
+}
+
+// VecDeque tests
+#[test]
+fn test_vecdeque_roundtrip() {
+    use alloc::collections::VecDeque;
+
+    let original: VecDeque<u32> = VecDeque::from([10, 20, 30]);
+    let mut buf = [0u8; 64];
+
+    let written = original.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 1 + 12); // varint len + 3*4
+
+    let (decoded, consumed) = VecDeque::<u32>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, original);
+    assert_eq!(consumed, written);
+}
+
+#[test]
+fn test_vecdeque_empty() {
+    use alloc::collections::VecDeque;
+
+    let original: VecDeque<u8> = VecDeque::new();
+    let mut buf = [0u8; 64];
+
+    let written = original.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 1);
+
+    let (decoded, consumed) = VecDeque::<u8>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, original);
+    assert_eq!(consumed, written);
+}
+
+#[test]
+fn test_vecdeque_wire_compat_with_vec() {
+    use alloc::collections::VecDeque;
+
+    let v: Vec<u32> = vec![1, 2, 3];
+    let d: VecDeque<u32> = VecDeque::from([1, 2, 3]);
+
+    let mut buf_v = [0u8; 64];
+    let mut buf_d = [0u8; 64];
+    let n_v = v.to_bytes(&mut buf_v).unwrap();
+    let n_d = d.to_bytes(&mut buf_d).unwrap();
+
+    assert_eq!(n_v, n_d);
+    assert_eq!(&buf_v[..n_v], &buf_d[..n_d]);
 }
