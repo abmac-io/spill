@@ -1,6 +1,15 @@
 #[cfg(feature = "alloc")]
 mod alloc;
 
+#[cfg(feature = "serde")]
+mod serde;
+
+#[cfg(feature = "facet")]
+mod facet;
+
+#[cfg(feature = "rkyv")]
+mod rkyv;
+
 use core::{f32, f64};
 
 use super::*;
@@ -271,6 +280,95 @@ fn test_array_roundtrip() {
     let (decoded, consumed) = <[u32; 4]>::from_bytes(&buf).unwrap();
     assert_eq!(decoded, value);
     assert_eq!(consumed, 16);
+}
+
+// Tuple tests
+#[test]
+fn test_tuple_fixed() {
+    let mut buf = [0u8; 5];
+    let value: (u32, u8) = (0x12345678, 42);
+
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 5);
+
+    let (decoded, consumed) = <(u32, u8)>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, value);
+    assert_eq!(consumed, 5);
+
+    assert_eq!(<(u32, u8)>::MAX_SIZE, Some(5));
+    assert_eq!(value.byte_len(), Some(5));
+}
+
+#[test]
+fn test_tuple_single() {
+    let mut buf = [0u8; 4];
+    let value: (u32,) = (99,);
+
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 4);
+
+    let (decoded, consumed) = <(u32,)>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, value);
+    assert_eq!(consumed, 4);
+}
+
+#[test]
+fn test_tuple_arity_12() {
+    let mut buf = [0u8; 12];
+    let value: (u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8) =
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 12);
+
+    let (decoded, consumed) =
+        <(u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8)>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, value);
+    assert_eq!(consumed, 12);
+}
+
+// Result tests
+#[test]
+fn test_result_ok() {
+    let mut buf = [0u8; 8];
+    let value: core::result::Result<u32, u8> = Ok(0x12345678);
+
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 5); // 1 byte discriminant + 4 bytes u32
+
+    let (decoded, consumed) = <core::result::Result<u32, u8>>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, Ok(0x12345678));
+    assert_eq!(consumed, 5);
+}
+
+#[test]
+fn test_result_err() {
+    let mut buf = [0u8; 8];
+    let value: core::result::Result<u32, u8> = Err(42);
+
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 2); // 1 byte discriminant + 1 byte u8
+
+    let (decoded, consumed) = <core::result::Result<u32, u8>>::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, Err(42));
+    assert_eq!(consumed, 2);
+}
+
+#[test]
+fn test_result_invalid_discriminant() {
+    let buf = [2u8, 0, 0, 0, 0];
+    let result = <core::result::Result<u32, u8>>::from_bytes(&buf);
+    assert!(matches!(result, Err(BytesError::InvalidData { .. })));
+}
+
+#[test]
+fn test_result_max_size() {
+    // max(4, 1) + 1 = 5
+    assert_eq!(<core::result::Result<u32, u8>>::MAX_SIZE, Some(5));
+    // max(4, 4) + 1 = 5
+    assert_eq!(<core::result::Result<u32, u32>>::MAX_SIZE, Some(5));
+    // max(1, 8) + 1 = 9
+    assert_eq!(<core::result::Result<u8, u64>>::MAX_SIZE, Some(9));
 }
 
 // ViewBytes tests

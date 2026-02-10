@@ -197,6 +197,212 @@ fn test_derive_enum_invalid_discriminant() {
 }
 
 // =============================================================================
+// Skip attribute tests
+// =============================================================================
+
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
+struct SkipNamed {
+    a: u32,
+    #[bytecast(skip)]
+    b: u16,
+    c: u8,
+}
+
+#[test]
+fn test_derive_skip_named_field() {
+    let mut buf = [0u8; 16];
+    let value = SkipNamed {
+        a: 0x12345678,
+        b: 0xABCD,
+        c: 42,
+    };
+
+    // b is skipped, so only a (4) + c (1) = 5 bytes
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 5);
+    assert_eq!(SkipNamed::MAX_SIZE, Some(5));
+    assert_eq!(value.byte_len(), Some(5));
+
+    // Deserialize: b should be Default (0)
+    let (decoded, consumed) = SkipNamed::from_bytes(&buf).unwrap();
+    assert_eq!(consumed, 5);
+    assert_eq!(decoded.a, 0x12345678);
+    assert_eq!(decoded.b, 0); // default
+    assert_eq!(decoded.c, 42);
+}
+
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
+struct SkipTuple(u32, #[bytecast(skip)] u16, u8);
+
+#[test]
+fn test_derive_skip_tuple_field() {
+    let mut buf = [0u8; 16];
+    let value = SkipTuple(0x12345678, 0xABCD, 42);
+
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 5); // 4 + 1, skipping the u16
+    assert_eq!(SkipTuple::MAX_SIZE, Some(5));
+
+    let (decoded, consumed) = SkipTuple::from_bytes(&buf).unwrap();
+    assert_eq!(consumed, 5);
+    assert_eq!(decoded.0, 0x12345678);
+    assert_eq!(decoded.1, 0); // default
+    assert_eq!(decoded.2, 42);
+}
+
+// =============================================================================
+// repr(uN) enum tests
+// =============================================================================
+
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
+#[repr(u32)]
+enum ReprU32Enum {
+    A,
+    B,
+    C(u8),
+}
+
+#[test]
+fn test_derive_repr_u32_unit_variant() {
+    let mut buf = [0u8; 16];
+
+    let value = ReprU32Enum::A;
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 4); // u32 discriminant
+    assert_eq!(value.byte_len(), Some(4));
+
+    let (decoded, consumed) = ReprU32Enum::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, value);
+    assert_eq!(consumed, 4);
+}
+
+#[test]
+fn test_derive_repr_u32_data_variant() {
+    let mut buf = [0u8; 16];
+
+    let value = ReprU32Enum::C(42);
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 5); // 4 byte discriminant + 1 byte u8
+    assert_eq!(value.byte_len(), Some(5));
+
+    let (decoded, consumed) = ReprU32Enum::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, value);
+    assert_eq!(consumed, 5);
+}
+
+#[test]
+fn test_derive_repr_u32_max_size() {
+    // MAX_SIZE = size_of::<u32>() + max variant payload (1 byte for C)
+    assert_eq!(ReprU32Enum::MAX_SIZE, Some(5));
+}
+
+#[test]
+fn test_derive_repr_u32_invalid_discriminant() {
+    // Write a u32 discriminant of 99 — should fail
+    let mut buf = [0u8; 4];
+    let _ = 99u32.to_bytes(&mut buf).unwrap();
+    let result = ReprU32Enum::from_bytes(&buf);
+    assert!(matches!(result, Err(BytesError::InvalidData { .. })));
+}
+
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
+#[repr(u16)]
+enum ReprU16Enum {
+    X,
+    Y { value: u32 },
+}
+
+#[test]
+fn test_derive_repr_u16_enum() {
+    let mut buf = [0u8; 16];
+
+    let value = ReprU16Enum::Y { value: 0xDEADBEEF };
+    let written = value.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 6); // 2 byte discriminant + 4 byte u32
+
+    let (decoded, consumed) = ReprU16Enum::from_bytes(&buf).unwrap();
+    assert_eq!(decoded, value);
+    assert_eq!(consumed, 6);
+
+    assert_eq!(ReprU16Enum::MAX_SIZE, Some(6));
+}
+
+// =============================================================================
+// boxed field tests
+// =============================================================================
+
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
+struct BoxedNamed {
+    id: u16,
+    #[bytecast(boxed)]
+    value: Box<u32>,
+}
+
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
+struct BoxedTuple(u8, #[bytecast(boxed)] Box<u32>);
+
+#[test]
+fn test_boxed_named_roundtrip() {
+    let original = BoxedNamed {
+        id: 1,
+        value: Box::new(0x12345678),
+    };
+    let mut buf = [0u8; 64];
+    let written = original.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 6); // 2 + 4
+
+    let (decoded, consumed) = BoxedNamed::from_bytes(&buf).unwrap();
+    assert_eq!(consumed, 6);
+    assert_eq!(decoded, original);
+}
+
+#[test]
+fn test_boxed_tuple_roundtrip() {
+    let original = BoxedTuple(42, Box::new(0xDEADBEEF));
+    let mut buf = [0u8; 64];
+    let written = original.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 5); // 1 + 4
+
+    let (decoded, consumed) = BoxedTuple::from_bytes(&buf).unwrap();
+    assert_eq!(consumed, 5);
+    assert_eq!(decoded, original);
+}
+
+#[test]
+fn test_boxed_max_size() {
+    assert_eq!(BoxedNamed::MAX_SIZE, Some(6));
+    assert_eq!(BoxedTuple::MAX_SIZE, Some(5));
+}
+
+// =============================================================================
+// PhantomData auto-skip tests
+// =============================================================================
+
+use core::marker::PhantomData;
+
+#[derive(DeriveToBytes, DeriveFromBytes, Debug, PartialEq)]
+struct WithPhantom<T> {
+    id: u32,
+    _marker: PhantomData<T>,
+}
+
+#[test]
+fn test_phantom_data_auto_skip() {
+    let original = WithPhantom::<String> {
+        id: 42,
+        _marker: PhantomData,
+    };
+    let mut buf = [0u8; 4];
+    let written = original.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 4);
+
+    let (decoded, consumed) = WithPhantom::<String>::from_bytes(&buf).unwrap();
+    assert_eq!(consumed, 4);
+    assert_eq!(decoded, original);
+    assert_eq!(WithPhantom::<String>::MAX_SIZE, Some(4));
+}
+
+// =============================================================================
 // byte_len tests
 // =============================================================================
 
