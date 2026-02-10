@@ -11,6 +11,8 @@ Fast, simple byte serialization for Rust. Designed for embedded systems and perf
 
 ## Usage
 
+__Note__: Bytecast is soon to be published soon. Please use the repository version until then.
+
 Add to your `Cargo.toml`:
 
 ```toml
@@ -18,85 +20,36 @@ Add to your `Cargo.toml`:
 bytecast = "1.0.0"
 ```
 
-### Basic Example
+### Derive Macros
 
-```rust
-use bytecast::{ToBytes, FromBytes};
-
-// Fixed-size types work automatically
-let value: u32 = 0x12345678;
-let mut buf = [0u8; 4];
-value.to_bytes(&mut buf).unwrap();
-
-let (decoded, _) = u32::from_bytes(&buf).unwrap();
-assert_eq!(decoded, value);
-```
-
-### With Allocator
-
-Enable the `alloc` feature for `Vec<T>` and `String` support:
-
-```toml
-[dependencies]
-bytecast = { version = "1.0.0", features = ["alloc"] }
-```
-
-```rust
-use bytecast::{ToBytes, FromBytes};
-
-let data: Vec<u8> = vec![1, 2, 3, 4, 5];
-let mut buf = [0u8; 64];
-let written = data.to_bytes(&mut buf).unwrap();
-
-let (decoded, _) = Vec::<u8>::from_bytes(&buf).unwrap();
-assert_eq!(decoded, data);
-```
-
-### Custom Structs
-
-For `#[repr(C)]` structs, use zerocopy derives with the `ZeroCopyType` marker:
-
-```rust
-use bytecast::{ToBytes, FromBytes, ZeroCopyType, ZcFromBytes, IntoBytes, Immutable, KnownLayout};
-
-#[derive(ZcFromBytes, IntoBytes, Immutable, KnownLayout)]
-#[repr(C)]
-struct Point {
-    x: i32,
-    y: i32,
-}
-
-impl ZeroCopyType for Point {}
-
-let p = Point { x: 10, y: 20 };
-let mut buf = [0u8; 8];
-p.to_bytes(&mut buf).unwrap();
-```
+Use `DeriveToBytes` and `DeriveFromBytes` for structs and enums with variable-length or mixed fields. Supports `#[bytecast(skip)]` to exclude fields from serialization ([example](examples/derive.rs)).
 
 ### Sequential I/O
 
-Use `ByteCursor` and `ByteReader` for sequential serialization:
+Use `ByteCursor` and `ByteReader` for writing and reading multiple values in sequence from a single buffer.
 
-```rust
-use bytecast::{ByteCursor, ByteReader, ToBytes, FromBytes};
+### Enums
 
-let mut buf = [0u8; 32];
-let mut cursor = ByteCursor::new(&mut buf);
+Enums use a `u8` discriminant by default. Use `#[repr(uN)]` for larger discriminants. A compile-time error is emitted if the number of variants exceeds the discriminant capacity.
 
-cursor.write(&42u32).unwrap();
-cursor.write(&100u64).unwrap();
+### Bridge Integrations
 
-let mut reader = ByteReader::new(cursor.written());
-let a: u32 = reader.read().unwrap();
-let b: u64 = reader.read().unwrap();
-```
+Optional bridges let bytecast-serialized data flow through other serialization frameworks. Enable the corresponding feature flag and see the matching example for usage:
+
+- **serde** — `BytecastSerde<T>` ([example](examples/serde_bridge.rs))
+- **facet** — `BytecastFacet` ([example](examples/facet_bridge.rs))
+- **rkyv** — `BytecastRkyv` ([example](examples/rkyv_bridge.rs))
 
 ## Feature Flags
 
-| Feature | Description |
-|---------|-------------|
-| `alloc` | Enables `Vec<T>` and `String` support |
-| `std`   | Enables `std` and full zerocopy std support (implies `alloc`) |
+| Feature  | Description |
+|----------|-------------|
+| `alloc`  | Enables `Vec<T>`, `String`, `VecDeque<T>`, and `Cow` support |
+| `std`    | Enables `std` and full zerocopy std support (implies `alloc`) |
+| `derive` | Enables `DeriveToBytes` and `DeriveFromBytes` proc macros |
+| `serde`  | Enables `BytecastSerde<T>` bridge (implies `alloc`) |
+| `facet`  | Enables `BytecastFacet` bridge (implies `alloc`) |
+| `rkyv`   | Enables `BytecastRkyv` bridge (implies `alloc`) |
 
 ## Supported Types
 
@@ -122,8 +75,11 @@ let b: u64 = reader.read().unwrap();
 | `[T; N]` | `N * size_of::<T>()` | - |
 | `Option<T>` | 1 byte discriminant + payload | - |
 | `#[repr(C)]` structs | Size of struct | - |
-| `Vec<T>` | Varint length + elements | `alloc` or `std` |
-| `String` | Varint length + UTF-8 bytes | `alloc` or `std` |
+| `Vec<T>` | Varint length + elements | `alloc` |
+| `VecDeque<T>` | Varint length + elements | `alloc` |
+| `String` | Varint length + UTF-8 bytes | `alloc` |
+| `Cow<'_, str>` | Varint length + UTF-8 bytes | `alloc` |
+| `Cow<'_, [T]>` | Varint length + elements | `alloc` |
 
 ## License
 
