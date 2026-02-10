@@ -28,21 +28,12 @@ name = "single_thread"
 harness = false
 
 [[bench]]
-name = "spsc"
-harness = false
-required-features = ["std"]
-
-[[bench]]
 name = "chaining"
 harness = false
 
 [[bench]]
 name = "mpsc"
 harness = false
-required-features = ["std"]
-
-[[example]]
-name = "spsc"
 required-features = ["std"]
 
 [[example]]
