@@ -1,6 +1,15 @@
 #[cfg(feature = "alloc")]
 mod alloc;
 
+#[cfg(feature = "serde")]
+mod serde;
+
+#[cfg(feature = "facet")]
+mod facet;
+
+#[cfg(feature = "rkyv")]
+mod rkyv;
+
 use core::{f32, f64};
 
 use super::*;
