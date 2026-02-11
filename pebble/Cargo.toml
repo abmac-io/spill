@@ -1,0 +1,26 @@
+[package]
+name = "pebble"
+version = "0.1.0"
+edition = "2024"
+description = "O(√T) checkpoint management using the Williams pebble game algorithm"
+license = "MIT OR Apache-2.0"
+
+[features]
+default = []
+bytecast = ["dep:bytecast"]
+spill-ring = ["dep:spill-ring"]
+spill-ring-std = ["spill-ring", "spill-ring/std"]
+verdict = []
+
+[dependencies]
+bytecast = { path = "../bytecast", optional = true, default-features = false, features = ["alloc", "derive"] }
+hashbrown = "0.15"
+spill-ring = { path = "../spill-ring", optional = true, default-features = false }
+spout = { path = "../spout" }
+verdict = { path = "../verdict", default-features = false }
+
+[[example]]
+name = "files"
+required-features = ["spill-ring", "bytecast"]
+
+[dev-dependencies]
