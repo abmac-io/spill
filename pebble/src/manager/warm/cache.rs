@@ -20,6 +20,10 @@ const DEFAULT_WARM_CAPACITY: usize = 64;
 /// When used with `PebbleManager`, evicted items land here unserialized.
 /// On overflow (capacity exceeded), the oldest entry is returned to the
 /// caller for serialization to the cold tier.
+///
+/// Capacity should be at most `hot_capacity`. If you need more unserialized
+/// checkpoints in memory, increase `hot_capacity` instead — items in the
+/// hot tier participate in eviction scoring while warm items do not.
 pub struct WarmCache<T: Checkpointable> {
     entries: HashMap<T::Id, (T, u64)>,
     capacity: usize,

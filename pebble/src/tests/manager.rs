@@ -910,13 +910,13 @@ fn builder_warm_capacity_configurable() {
     );
     let mut manager = PebbleManagerBuilder::new()
         .cold(cold)
-        .warm(WarmCache::<TestCheckpoint>::with_capacity(4))
-        .hot_capacity(2)
+        .warm(WarmCache::<TestCheckpoint>::with_capacity(2))
+        .hot_capacity(4)
         .build::<TestCheckpoint>()
         .unwrap();
 
-    // hot=2, warm_capacity=4
-    // Adds 0..6: 2 hot, 4 warm (full)
+    // hot=4, warm_capacity=2
+    // Adds 0..6: 4 hot, 2 warm (full)
     for i in 0..6 {
         manager
             .add(TestCheckpoint {
@@ -928,8 +928,8 @@ fn builder_warm_capacity_configurable() {
     }
 
     let stats = manager.stats();
-    assert_eq!(stats.red_pebble_count, 2);
-    assert_eq!(stats.warm_count, 4);
+    assert_eq!(stats.red_pebble_count, 4);
+    assert_eq!(stats.warm_count, 2);
 
     // 7th add overflows warm -> write buffer
     manager
@@ -941,6 +941,6 @@ fn builder_warm_capacity_configurable() {
         .unwrap();
 
     let stats = manager.stats();
-    assert_eq!(stats.warm_count, 4);
+    assert_eq!(stats.warm_count, 2);
     assert!(stats.write_buffer_count > 0 || stats.blue_pebble_count > 0);
 }
