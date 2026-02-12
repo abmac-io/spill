@@ -37,9 +37,19 @@ pub trait ToBytesExt: ToBytes {
     fn to_vec(&self) -> Result<Vec<u8>, BytesError> {
         let size = self.byte_len().or(Self::MAX_SIZE).unwrap_or(256);
         let mut buf = alloc::vec![0u8; size];
-        let n = self.to_bytes(&mut buf)?;
-        buf.truncate(n);
-        Ok(buf)
+        match self.to_bytes(&mut buf) {
+            Ok(n) => {
+                buf.truncate(n);
+                Ok(buf)
+            }
+            Err(BytesError::BufferTooSmall { needed, .. }) => {
+                buf.resize(needed, 0);
+                let n = self.to_bytes(&mut buf)?;
+                buf.truncate(n);
+                Ok(buf)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Serialize to a fixed-size array.
