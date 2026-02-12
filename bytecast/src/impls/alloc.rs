@@ -113,7 +113,7 @@ impl<T: FromBytes> FromBytes for Vec<T> {
     fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
         let (len, mut offset) = var_int::decode(buf)?;
         let len = len as usize;
-        let mut vec = Vec::with_capacity(len);
+        let mut vec = Vec::with_capacity(len.min(buf.len() - offset));
         for _ in 0..len {
             let (item, n) = T::from_bytes(&buf[offset..])?;
             vec.push(item);
@@ -149,7 +149,7 @@ impl<T: FromBytes> FromBytes for VecDeque<T> {
     fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
         let (len, mut offset) = var_int::decode(buf)?;
         let len = len as usize;
-        let mut deque = VecDeque::with_capacity(len);
+        let mut deque = VecDeque::with_capacity(len.min(buf.len() - offset));
         for _ in 0..len {
             let (item, n) = T::from_bytes(&buf[offset..])?;
             deque.push_back(item);
