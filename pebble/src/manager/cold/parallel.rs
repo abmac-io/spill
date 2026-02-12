@@ -310,3 +310,24 @@ where
         self.inner.next()
     }
 }
+
+// ParallelCold buffers items in `pending` between store() calls.
+// PebbleManager::Drop calls flush() which drains pending, but standalone
+// usage must flush explicitly before dropping — matching the Spout
+// ecosystem convention (BatchSpout, ReduceSpout, etc.).
+impl<T, S, Ser, const N: usize> Drop for ParallelCold<T, S, Ser, N>
+where
+    T: Checkpointable + Send + Sync + 'static,
+    T::Id: Send + Sync + 'static,
+    S: Spout<(T::Id, Vec<u8>)> + Clone + Send + 'static,
+    Ser: CheckpointSerializer<T> + Clone + Sync + 'static,
+    Ser::Error: Send + 'static,
+{
+    fn drop(&mut self) {
+        debug_assert!(
+            self.pending.is_empty(),
+            "ParallelCold dropped with {} unflushed items — call flush() before dropping",
+            self.pending.len(),
+        );
+    }
+}
