@@ -29,7 +29,6 @@ fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     let body = match &input.data {
         Data::Struct(data) => {
-            validate_struct_field_attrs(&data.fields)?;
             let (reads, constructor) = generate_struct(name, &data.fields)?;
             quote! {
                 #reads
