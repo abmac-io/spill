@@ -8,6 +8,7 @@ use crate::strategy::Strategy;
 
 use super::cold::ColdTier;
 use super::error::{PebbleManagerError, Result};
+use super::safety::{CapacityGuard, CheckpointRef};
 use super::stats::{PebbleStats, TheoreticalValidation};
 use super::traits::Checkpointable;
 use super::warm::WarmTier;
@@ -143,6 +144,56 @@ where
         self.debug_place_red(state_id);
 
         Ok(state_id)
+    }
+
+    /// Like [`add`](Self::add), but also returns a [`CheckpointRef`] token.
+    #[must_use = "this returns a Result that may indicate an error"]
+    pub fn add_ref(&mut self, checkpoint: T) -> Result<CheckpointRef<T::Id>, T::Id, C::Error> {
+        let state_id = checkpoint.checkpoint_id();
+        self.add(checkpoint)?;
+        Ok(CheckpointRef::new(state_id))
+    }
+
+    /// Like [`insert`](Self::insert), but also returns a [`CheckpointRef`] token.
+    #[must_use = "this returns a Result that may indicate an error"]
+    pub fn insert_ref<F>(&mut self, constructor: F) -> Result<CheckpointRef<T::Id>, T::Id, C::Error>
+    where
+        F: FnOnce() -> T,
+    {
+        let id = self.insert(constructor)?;
+        Ok(CheckpointRef::new(id))
+    }
+
+    /// Probe for a checkpoint across all tiers. Returns a token if found.
+    ///
+    /// Replaces the pattern `if manager.contains(id) { ... }` with a token
+    /// that can flow into [`load_ref`](Self::load_ref) or
+    /// [`rebuild_ref`](Self::rebuild_ref).
+    pub fn locate(&self, state_id: T::Id) -> Option<CheckpointRef<T::Id>> {
+        if self.contains(state_id) {
+            Some(CheckpointRef::new(state_id))
+        } else {
+            None
+        }
+    }
+
+    /// Like [`load`](Self::load), but takes a [`CheckpointRef`] instead of a raw ID.
+    #[must_use = "this returns a Result that may indicate an error"]
+    pub fn load_ref(&mut self, token: CheckpointRef<T::Id>) -> Result<&T, T::Id, C::Error> {
+        self.load(token.id())
+    }
+
+    /// Ensure at least one slot is free in the hot tier.
+    ///
+    /// Evicts if necessary. Returns a [`CapacityGuard`] proving capacity
+    /// exists. The guard borrows the manager mutably, so no other mutation
+    /// can invalidate the guarantee before the guard is consumed.
+    #[must_use = "this returns a Result that may indicate an error"]
+    pub fn ensure_capacity(&mut self) -> Result<CapacityGuard<'_, T, C, W>, T::Id, C::Error> {
+        if self.red_pebbles.len() >= self.hot_capacity {
+            self.evict_red_pebbles()?;
+        }
+        Ok(CapacityGuard::new(self))
     }
 
     /// Get a checkpoint in fast memory. Returns `None` if not in fast memory.
@@ -454,7 +505,7 @@ where
     // --- Internal ---
 
     /// Assign a checkpoint to the active branch and update branch head.
-    fn track_new_checkpoint(&mut self, state_id: T::Id) {
+    pub(super) fn track_new_checkpoint(&mut self, state_id: T::Id) {
         if let Some(ref mut tracker) = self.branches {
             let active = tracker.active();
             tracker.assign(state_id, active);
@@ -466,7 +517,7 @@ where
 
     /// Mirror a red pebble placement in the debug game and validate.
     #[cfg(debug_assertions)]
-    fn debug_place_red(&mut self, state_id: T::Id) {
+    pub(super) fn debug_place_red(&mut self, state_id: T::Id) {
         self.game.place_red(state_id);
         self.debug_validate();
     }

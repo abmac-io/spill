@@ -6,6 +6,7 @@ use hashbrown::{HashMap, HashSet};
 use super::cold::ColdTier;
 use super::error::{PebbleManagerError, Result};
 use super::pebble_manager::PebbleManager;
+use super::safety::CheckpointRef;
 use super::traits::Checkpointable;
 use super::warm::WarmTier;
 
@@ -207,6 +208,12 @@ where
             refs.insert(dep_id, dep);
         }
         Ok(refs)
+    }
+
+    /// Like [`rebuild`](Self::rebuild), but takes a [`CheckpointRef`] instead of a raw ID.
+    #[must_use = "this returns a Result that may indicate an error"]
+    pub fn rebuild_ref(&mut self, token: CheckpointRef<T::Id>) -> Result<T, T::Id, C::Error> {
+        self.rebuild(token.id())
     }
 
     pub(super) fn promote_from_workspace(&mut self, mut workspace: HashMap<T::Id, T>) {
