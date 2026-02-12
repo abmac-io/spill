@@ -23,11 +23,6 @@ impl<S> SpoutCell<S> {
     }
 
     #[inline]
-    pub(crate) fn get_ref(&self) -> &S {
-        unsafe { &*self.0.get() }
-    }
-
-    #[inline]
     pub(crate) fn get_mut(&mut self) -> &mut S {
         self.0.get_mut()
     }

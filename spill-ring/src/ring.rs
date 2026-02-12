@@ -394,8 +394,8 @@ impl<T, const N: usize, S: Spout<T, Error = core::convert::Infallible>> SpillRin
     /// Reference to the spout.
     #[inline]
     #[must_use]
-    pub fn sink(&self) -> &S {
-        self.sink.get_ref()
+    pub fn sink(&mut self) -> &S {
+        self.sink.get_mut()
     }
 
     /// Mutable reference to the spout.

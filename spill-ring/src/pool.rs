@@ -27,7 +27,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 
 #[cfg(feature = "std")]
 use std::sync::{Arc, Condvar, Mutex};
@@ -43,6 +43,7 @@ struct DrainQueue<T, const N: usize> {
     queue: Mutex<VecDeque<BoxedRing<T, N>>>,
     condvar: Condvar,
     shutdown: AtomicBool,
+    active_producers: AtomicUsize,
 }
 
 #[cfg(feature = "std")]
@@ -52,6 +53,7 @@ impl<T, const N: usize> DrainQueue<T, N> {
             queue: Mutex::new(VecDeque::new()),
             condvar: Condvar::new(),
             shutdown: AtomicBool::new(false),
+            active_producers: AtomicUsize::new(0),
         }
     }
 
@@ -61,16 +63,19 @@ impl<T, const N: usize> DrainQueue<T, N> {
         self.condvar.notify_one();
     }
 
-    /// Pop a ring to drain (blocks until available or shutdown).
+    /// Pop a ring to drain. Blocks until available.
+    /// Returns `None` only when shutdown is set, all producers are
+    /// dropped, and the queue is empty — guaranteeing no data loss.
     fn pop(&self) -> Option<BoxedRing<T, N>> {
         let mut queue = self.queue.lock().unwrap();
         loop {
             if let Some(ring) = queue.pop_front() {
                 return Some(ring);
             }
-            if self.shutdown.load(Ordering::Acquire) {
-                // Drain remaining on shutdown
-                return queue.pop_front();
+            if self.shutdown.load(Ordering::Acquire)
+                && self.active_producers.load(Ordering::Acquire) == 0
+            {
+                return None;
             }
             queue = self.condvar.wait(queue).unwrap();
         }
@@ -78,6 +83,15 @@ impl<T, const N: usize> DrainQueue<T, N> {
 
     fn shutdown(&self) {
         self.shutdown.store(true, Ordering::Release);
+        self.condvar.notify_all();
+    }
+
+    fn register_producer(&self) {
+        self.active_producers.fetch_add(1, Ordering::Release);
+    }
+
+    fn unregister_producer(&self) {
+        self.active_producers.fetch_sub(1, Ordering::Release);
         self.condvar.notify_all();
     }
 }
@@ -139,6 +153,7 @@ impl<T, const N: usize> StealPool<T, N> {
 
     /// Create a producer handle.
     pub fn producer(self: &Arc<Self>) -> StealProducer<T, N> {
+        self.full.register_producer();
         let active = self.empty.steal();
         let spare = self.empty.steal();
         StealProducer {
@@ -255,6 +270,9 @@ impl<T, const N: usize> Drop for StealProducer<T, N> {
             let spare = unsafe { Box::from_raw(spare_ptr) };
             self.pool.empty.return_ring(spare);
         }
+
+        // Notify drain thread that this producer is gone
+        self.pool.full.unregister_producer();
     }
 }
 

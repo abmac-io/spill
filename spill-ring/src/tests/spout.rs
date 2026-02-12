@@ -28,7 +28,7 @@ fn batch_sink_with_ring_chain() {
     // Reduces cascade traffic
     let batch_sink: BatchSpout<i32, CollectSpout<Vec<i32>>> =
         BatchSpout::new(100, CollectSpout::new());
-    let ring = SpillRing::<i32, 4, _>::with_sink(batch_sink);
+    let mut ring = SpillRing::<i32, 4, _>::with_sink(batch_sink);
 
     for i in 0..1000 {
         ring.push(i);

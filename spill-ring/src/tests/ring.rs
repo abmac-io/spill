@@ -34,7 +34,7 @@ fn push_and_pop() {
 fn eviction_to_sink() {
     // N=4 main buffer, items evicted directly to sink
     let sink = CollectSpout::new();
-    let ring = SpillRing::<i32, 4, _>::with_sink(sink);
+    let mut ring = SpillRing::<i32, 4, _>::with_sink(sink);
 
     ring.push(1);
     ring.push(2);
@@ -228,7 +228,7 @@ fn drop_with_default_sink_drops_items() {
 fn overflow_sends_to_sink_immediately() {
     // N=2 main buffer, evicted items go directly to sink
     let sink = CollectSpout::new();
-    let ring = SpillRing::<i32, 2, _>::with_sink(sink);
+    let mut ring = SpillRing::<i32, 2, _>::with_sink(sink);
 
     ring.push(1);
     ring.push(2);
