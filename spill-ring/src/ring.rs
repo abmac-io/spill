@@ -67,7 +67,7 @@ impl<T, const N: usize> SpillRing<T, N, DropSpout> {
     /// Create a new ring buffer with pre-warmed cache (evicted items are dropped).
     #[must_use]
     pub fn new() -> Self {
-        let ring = Self::cold();
+        let mut ring = Self::cold();
         ring.warm();
         ring
     }
@@ -96,7 +96,7 @@ impl<T, const N: usize, S: Spout<T, Error = core::convert::Infallible>> SpillRin
     /// Create a new ring buffer with pre-warmed cache and a custom spout.
     #[must_use]
     pub fn with_sink(sink: S) -> Self {
-        let ring = Self::with_sink_cold(sink);
+        let mut ring = Self::with_sink_cold(sink);
         ring.warm();
         ring
     }
@@ -117,16 +117,16 @@ impl<T, const N: usize, S: Spout<T, Error = core::convert::Infallible>> SpillRin
     }
 
     /// Bring all ring slots into L1/L2 cache.
-    fn warm(&self) {
+    fn warm(&mut self) {
         for i in 0..N {
             unsafe {
-                let slot = &self.buffer[i];
-                let ptr = slot.data.get() as *mut u8;
+                let slot = &mut self.buffer[i];
+                let ptr = slot.data.get_mut() as *mut MaybeUninit<T> as *mut u8;
                 core::ptr::write_bytes(ptr, 0, core::mem::size_of::<MaybeUninit<T>>());
             }
         }
-        self.head.store(0);
-        self.tail.store(0);
+        self.head.store_mut(0);
+        self.tail.store_mut(0);
     }
 
     /// Push an item. If full, evicts oldest to spout.
