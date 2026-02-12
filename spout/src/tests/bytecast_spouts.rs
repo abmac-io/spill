@@ -92,11 +92,11 @@ fn batch_spout_to_bytes_empty_buffer() {
 
     let bytes = s.to_vec().unwrap();
 
-    // Should serialize threshold (4 bytes) + empty vec (1 byte varint length = 0)
+    // Should serialize threshold (8 bytes on wire via bytecast) + empty vec
     assert!(!bytes.is_empty());
 
     // Verify threshold round-trips
-    let (threshold, offset) = u32::from_bytes(&bytes).unwrap();
+    let (threshold, offset) = usize::from_bytes(&bytes).unwrap();
     assert_eq!(threshold, 10);
     assert!(offset > 0);
 }
@@ -112,7 +112,7 @@ fn batch_spout_to_bytes_with_buffered_items() {
     let bytes = s.to_vec().unwrap();
 
     // Decode: threshold then buffer
-    let (threshold, offset) = u32::from_bytes(&bytes).unwrap();
+    let (threshold, offset) = usize::from_bytes(&bytes).unwrap();
     assert_eq!(threshold, 100);
 
     let (buffer, _) = Vec::<u32>::from_bytes(&bytes[offset..]).unwrap();

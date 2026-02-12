@@ -75,20 +75,23 @@ impl<T: ToBytes, S: Spout<Vec<u8>, Error = core::convert::Infallible>> Spout<T> 
         // Write payload first to learn actual size
         let payload_written = item.to_bytes(&mut self.buf[FRAME_HEADER_SIZE..])?;
 
+        // Validate payload fits in u32 length field
+        let payload_len =
+            u32::try_from(payload_written).map_err(|_| BytesError::BufferTooSmall {
+                needed: payload_written,
+                available: u32::MAX as usize,
+            })?;
+
         // Write header: producer_id + payload length
         let mut cursor = ByteCursor::new(&mut self.buf[..FRAME_HEADER_SIZE]);
         cursor.write(&self.producer_id)?;
-        cursor.write(&(payload_written as u32))?;
+        cursor.write(&payload_len)?;
 
-        // Truncate to actual frame size and swap out — avoids memcpy
+        // Truncate to actual frame size and reuse buffer
         let total = FRAME_HEADER_SIZE + payload_written;
         self.buf.truncate(total);
-        let frame = core::mem::replace(
-            &mut self.buf,
-            Vec::with_capacity(FRAME_HEADER_SIZE + payload_size),
-        );
         // Inner spout is infallible
-        let _ = self.inner.send(frame);
+        let _ = self.inner.send(self.buf.split_off(0));
         Ok(())
     }
 
@@ -101,11 +104,19 @@ impl<T: ToBytes, S: Spout<Vec<u8>, Error = core::convert::Infallible>> Spout<T> 
 
 /// Decode a frame produced by `FramedSpout`.
 ///
-/// Returns `(producer_id, item)` from the framed bytes.
+/// Returns `(producer_id, item)` from the framed bytes. Validates that the
+/// declared payload length matches the remaining frame bytes.
 pub fn decode_frame<T: FromBytes>(frame: &[u8]) -> Result<(usize, T), BytesError> {
     let mut reader = ByteReader::new(frame);
     let producer_id: usize = reader.read()?;
-    let _payload_len: u32 = reader.read()?;
+    let payload_len: u32 = reader.read()?;
+    let remaining = reader.remaining();
+    if remaining.len() != payload_len as usize {
+        return Err(BytesError::UnexpectedEof {
+            needed: payload_len as usize,
+            available: remaining.len(),
+        });
+    }
     let item: T = reader.read()?;
     Ok((producer_id, item))
 }
@@ -119,13 +130,13 @@ impl<T: ToBytes, S> ToBytes for BatchSpout<T, S> {
 
     fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, bytecast::BytesError> {
         let mut cursor = ByteCursor::new(buf);
-        cursor.write(&(self.threshold() as u32))?;
+        cursor.write(&self.threshold())?;
         cursor.write(&self.buffer)?;
         Ok(cursor.position())
     }
 
     fn byte_len(&self) -> Option<usize> {
-        // 4 bytes threshold + buffer byte_len
-        Some(4 + self.buffer.byte_len()?)
+        // usize threshold (8 bytes on wire via bytecast) + buffer byte_len
+        Some(<usize as ToBytes>::MAX_SIZE? + self.buffer.byte_len()?)
     }
 }
