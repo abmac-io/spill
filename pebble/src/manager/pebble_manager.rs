@@ -358,26 +358,26 @@ where
             1.0
         };
 
-        PebbleStats {
-            checkpoints_added: self.checkpoints_added,
-            red_pebble_count: self.red_pebbles.len(),
-            blue_pebble_count: self.blue_pebbles.len(),
+        PebbleStats::new(
+            self.checkpoints_added,
+            self.red_pebbles.len(),
+            self.blue_pebbles.len(),
             warm_count,
-            write_buffer_count: self.cold.buffered_count(),
-            io_operations: self.io_operations,
-            hot_utilization: if self.hot_capacity > 0 {
+            self.cold.buffered_count(),
+            self.io_operations,
+            if self.hot_capacity > 0 {
                 self.red_pebbles.len() as f64 / self.hot_capacity as f64
             } else {
                 0.0
             },
             theoretical_min_io,
-            io_optimality_ratio: if theoretical_min_io > 0 {
+            if theoretical_min_io > 0 {
                 self.io_operations as f64 / theoretical_min_io as f64
             } else {
                 1.0
             },
             space_complexity_ratio,
-        }
+        )
     }
 
     /// Check if current state meets theoretical bounds.
@@ -389,15 +389,15 @@ where
         let space_bound_satisfied = self.hot_capacity <= expected_space * SPACE_BOUND_MULTIPLIER;
 
         let io_bound_satisfied = match &self.strategy {
-            Strategy::Tree(_) => stats.io_optimality_ratio <= TREE_IO_BOUND,
-            Strategy::DAG(_) => stats.io_optimality_ratio <= DAG_IO_BOUND,
+            Strategy::Tree(_) => stats.io_optimality_ratio() <= TREE_IO_BOUND,
+            Strategy::DAG(_) => stats.io_optimality_ratio() <= DAG_IO_BOUND,
         };
 
         TheoreticalValidation::new(
             space_bound_satisfied,
             io_bound_satisfied,
-            stats.space_complexity_ratio,
-            stats.io_optimality_ratio,
+            stats.space_complexity_ratio(),
+            stats.io_optimality_ratio(),
             expected_space,
             total_nodes,
         )
