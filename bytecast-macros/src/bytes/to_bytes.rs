@@ -1,6 +1,9 @@
 //! ToBytes derive macro implementation.
 
-use super::{disc_capacity, has_boxed_attr, has_skip_attr, repr_int_type, serializable_type};
+use super::{
+    disc_capacity, has_boxed_attr, has_skip_attr, reject_enum_field_attrs, repr_int_type,
+    serializable_type,
+};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -75,6 +78,7 @@ fn validate_enum(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<syn::
             ),
         ));
     }
+    reject_enum_field_attrs(data)?;
     Ok(disc_ident)
 }
 
