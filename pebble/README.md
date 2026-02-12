@@ -31,6 +31,17 @@ Checkpoints:     [2]         [5]         [8]         [10]
 
 **Red pebbles** are checkpoints in fast memory — instant access, bounded space. **Blue pebbles** are checkpoints in storage — requires I/O, unbounded space. The algorithm automatically decides which to keep and which to evict.
 
+## Why not an LRU?
+
+An LRU cache evicts whichever item was *least recently used*. That works when every item is equally cheap to recompute. Checkpoints aren't — some are roots that many others depend on, some sit on critical paths, and some are cheap leaves.
+
+Pebble uses the dependency graph to make eviction decisions:
+
+- **An LRU** would evict a root checkpoint that hasn't been touched in a while, even though reloading it later means replaying the entire chain that depends on it.
+- **Pebble** keeps that root hot because the DAG shows it has many dependents, and evicts a leaf that's cheap to rebuild instead.
+
+The result is fewer I/O round-trips to storage for the same amount of fast memory. For tree-shaped computations, the strategy is provably within 2x of optimal I/O. For general DAGs, it stays within a 3x budget.
+
 ## Strategies
 
 | Strategy | Space | I/O Bound | Use Case |
