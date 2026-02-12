@@ -7,7 +7,10 @@ use crate::Spout;
 /// Prepends framing headers (producer_id, byte length, payload) before forwarding.
 ///
 /// Each item is serialized via `ToBytes`, then wrapped in a frame:
-/// `[producer_id: usize (8 bytes)] [payload_len: u32 (4 bytes)] [payload bytes]`
+/// `[producer_id: usize] [payload_len: u32 (4 bytes)] [payload bytes]`
+///
+/// Note: `usize` is serialized as `u64` on the wire by bytecast, so frames
+/// are portable across architectures.
 ///
 /// Compose with `ProducerSpout` for tagged, framed output.
 pub struct FramedSpout<S> {
@@ -17,8 +20,11 @@ pub struct FramedSpout<S> {
     buf: Vec<u8>,
 }
 
-/// Fixed overhead per frame: 8 bytes producer_id + 4 bytes payload length.
-const FRAME_HEADER_SIZE: usize = 8 + 4;
+/// Fixed overhead per frame: serialized usize (always 8 bytes via bytecast) + u32 payload length.
+const FRAME_HEADER_SIZE: usize = match (<usize as ToBytes>::MAX_SIZE, <u32 as ToBytes>::MAX_SIZE) {
+    (Some(a), Some(b)) => a + b,
+    _ => unreachable!(),
+};
 
 impl<S> FramedSpout<S> {
     /// Create a new framed spout.
