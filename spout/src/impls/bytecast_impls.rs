@@ -60,9 +60,11 @@ impl<S> FramedSpout<S> {
     }
 }
 
-impl<T: ToBytes, S: Spout<Vec<u8>>> Spout<T> for FramedSpout<S> {
+impl<T: ToBytes, S: Spout<Vec<u8>, Error = core::convert::Infallible>> Spout<T> for FramedSpout<S> {
+    type Error = BytesError;
+
     #[inline]
-    fn send(&mut self, item: T) {
+    fn send(&mut self, item: T) -> Result<(), Self::Error> {
         // Determine payload size
         let payload_size = item.byte_len().or(T::MAX_SIZE).unwrap_or(256);
 
@@ -71,18 +73,12 @@ impl<T: ToBytes, S: Spout<Vec<u8>>> Spout<T> for FramedSpout<S> {
         self.buf.resize(FRAME_HEADER_SIZE + payload_size, 0);
 
         // Write payload first to learn actual size
-        let payload_written = item
-            .to_bytes(&mut self.buf[FRAME_HEADER_SIZE..])
-            .expect("FramedSpout: payload serialization failed");
+        let payload_written = item.to_bytes(&mut self.buf[FRAME_HEADER_SIZE..])?;
 
         // Write header: producer_id + payload length
         let mut cursor = ByteCursor::new(&mut self.buf[..FRAME_HEADER_SIZE]);
-        cursor
-            .write(&self.producer_id)
-            .expect("FramedSpout: header serialization failed");
-        cursor
-            .write(&(payload_written as u32))
-            .expect("FramedSpout: header serialization failed");
+        cursor.write(&self.producer_id)?;
+        cursor.write(&(payload_written as u32))?;
 
         // Truncate to actual frame size and swap out — avoids memcpy
         let total = FRAME_HEADER_SIZE + payload_written;
@@ -91,12 +87,15 @@ impl<T: ToBytes, S: Spout<Vec<u8>>> Spout<T> for FramedSpout<S> {
             &mut self.buf,
             Vec::with_capacity(FRAME_HEADER_SIZE + payload_size),
         );
-        self.inner.send(frame);
+        // Inner spout is infallible
+        let _ = self.inner.send(frame);
+        Ok(())
     }
 
     #[inline]
-    fn flush(&mut self) {
-        self.inner.flush();
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        let _ = self.inner.flush();
+        Ok(())
     }
 }
 

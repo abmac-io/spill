@@ -25,10 +25,11 @@ impl<T> ChannelSpout<T> {
 }
 
 impl<T> Spout<T> for ChannelSpout<T> {
+    type Error = mpsc::SendError<T>;
+
     #[inline]
-    fn send(&mut self, item: T) {
-        // Ignore send errors - receiver may have been dropped
-        let _ = self.sender.send(item);
+    fn send(&mut self, item: T) -> Result<(), Self::Error> {
+        self.sender.send(item)
     }
 }
 
@@ -78,11 +79,12 @@ impl<T> SyncChannelSpout<T> {
 }
 
 impl<T> Spout<T> for SyncChannelSpout<T> {
+    type Error = mpsc::SendError<T>;
+
     #[inline]
-    fn send(&mut self, item: T) {
+    fn send(&mut self, item: T) -> Result<(), Self::Error> {
         // Blocks when channel is full — this IS the backpressure.
-        // Ignores errors if receiver is dropped.
-        let _ = self.sender.send(item);
+        self.sender.send(item)
     }
 }
 
@@ -91,13 +93,15 @@ impl<T> Spout<T> for SyncChannelSpout<T> {
 /// Allows multiple producers to share a single spout with mutex synchronization.
 /// Useful for MPSC patterns where all items should go to one collector.
 impl<T, S: Spout<T>> Spout<T> for std::sync::Arc<std::sync::Mutex<S>> {
+    type Error = S::Error;
+
     #[inline]
-    fn send(&mut self, item: T) {
-        self.lock().unwrap().send(item);
+    fn send(&mut self, item: T) -> Result<(), Self::Error> {
+        self.lock().unwrap().send(item)
     }
 
     #[inline]
-    fn flush(&mut self) {
-        self.lock().unwrap().flush();
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        self.lock().unwrap().flush()
     }
 }
