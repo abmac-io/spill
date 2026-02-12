@@ -1,3 +1,4 @@
+mod mpsc;
 mod ring;
 mod ring_chaining;
 mod spout;
