@@ -282,6 +282,72 @@ fn test_tee_spout() {
     assert_eq!(counter.count(), 1);
 }
 
+// resolve() Exhausted branch
+
+#[test]
+fn test_contextualized_resolve_exhausted() {
+    let err = TestError {
+        status: ErrorStatusValue::Exhausted,
+        message: "exhausted error",
+    };
+    let ctx = Context::new(err);
+
+    match ctx.resolve() {
+        Resolved::Exhausted(ex) => {
+            assert!(!ex.is_retryable());
+            assert_eq!(ex.inner().message, "exhausted error");
+        }
+        other => panic!("expected Exhausted, got {other:?}"),
+    }
+}
+
+// Context accessor tests
+
+#[test]
+fn test_contextualized_into_inner() {
+    let err = TestError::temporary("inner test");
+    let ctx = Context::new(err);
+    let inner = ctx.into_inner();
+    assert_eq!(inner.message, "inner test");
+}
+
+#[test]
+fn test_contextualized_with_frame() {
+    let frame = Frame::new("custom.rs", 99, 1, "custom frame");
+    let ctx = Context::new(TestError::temporary("test")).with_frame(frame);
+
+    assert_eq!(ctx.frames().len(), 1);
+    assert_eq!(ctx.frames()[0].file(), "custom.rs");
+    assert_eq!(ctx.frames()[0].line(), 99);
+    assert_eq!(ctx.frames()[0].msg(), "custom frame");
+}
+
+#[test]
+fn test_contextualized_with_ctx_lazy() {
+    let ctx = Context::new(TestError::temporary("test"))
+        .with_ctx_lazy(|| alloc::format!("lazy {}", "context"));
+
+    assert_eq!(ctx.frames().len(), 1);
+    assert!(ctx.frames()[0].msg().contains("lazy context"));
+}
+
+#[test]
+fn test_contextualized_error_source() {
+    let err = TestError::temporary("root");
+    let ctx = Context::new(err);
+    let source = core::error::Error::source(&ctx);
+    assert!(source.is_some());
+    assert_eq!(format!("{}", source.unwrap()), "root");
+}
+
+#[test]
+fn test_contextualized_from_error() {
+    let err = TestError::temporary("from test");
+    let ctx: Context<TestError> = err.into();
+    assert_eq!(ctx.inner().message, "from test");
+    assert!(ctx.frames().is_empty());
+}
+
 // Actionable Implementation Tests
 
 #[test]
@@ -467,9 +533,21 @@ fn test_wrap_ctx_bounded() {
     let result: Result<(), TestError> = Err(TestError::temporary("test"));
     let ctx = result.wrap_ctx_bounded("bounded context", CollectSpout::new(), 2);
 
-    let err = ctx.unwrap_err();
+    let mut err = ctx.unwrap_err();
     assert_eq!(err.frames().len(), 1);
     assert!(err.frames()[0].msg().contains("bounded context"));
+
+    // Add frames beyond the limit to verify eviction
+    err = err.with_ctx("frame 2").with_ctx("frame 3");
+    assert_eq!(err.frames().len(), 2);
+    assert_eq!(err.overflow_count(), 1);
+    assert!(err.frames()[0].msg().contains("frame 2"));
+    assert!(err.frames()[1].msg().contains("frame 3"));
+
+    // Evicted frame landed in the CollectSpout
+    let collected = err.into_overflow().into_items();
+    assert_eq!(collected.len(), 1);
+    assert!(collected[0].msg().contains("bounded context"));
 }
 
 // IntoContext Tests
@@ -517,17 +595,6 @@ fn test_frame_formatter_clear() {
 }
 
 // TeeSpout Extended Tests
-
-#[test]
-fn test_tee_spout_inner() {
-    let collect = CollectSpout::<Frame>::new();
-    let counter = CountingSpout::new();
-    let tee = TeeSpout::new(collect, counter);
-
-    let (a, b) = tee.inner();
-    assert_eq!(a.items().len(), 0);
-    assert_eq!(b.count(), 0);
-}
 
 #[test]
 fn test_tee_spout_inner_mut() {
@@ -604,6 +671,24 @@ fn test_assert_origin_passes() {
     assert_eq!(ctx.frames().len(), 1);
 }
 
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "insufficient context")]
+fn test_assert_depth_panics_when_insufficient() {
+    let _ = Context::new(TestError::temporary("test"))
+        .with_ctx("only one")
+        .assert_depth(3);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "missing provenance")]
+fn test_assert_origin_panics_when_missing() {
+    let _ = Context::new(TestError::temporary("test"))
+        .with_ctx("from somewhere")
+        .assert_origin("nonexistent_module.rs");
+}
+
 // RetryOutcome Tests
 
 #[test]
@@ -620,7 +705,10 @@ fn test_retry_outcome_frames() {
         Err(Context::new(TestError::temporary("test")).with_ctx("some context"))
     });
     let outcome = result.unwrap_err();
-    assert!(!outcome.frames().is_empty());
+    // Each attempt adds "some context" + "attempt N/2" annotation
+    assert_eq!(outcome.frames().len(), 2);
+    assert!(outcome.frames()[0].msg().contains("some context"));
+    assert!(outcome.frames()[1].msg().contains("attempt 2/2"));
 }
 
 #[test]
@@ -651,6 +739,34 @@ fn test_retry_max_attempts_zero_clamps_to_one() {
     });
     assert!(result.is_err());
     assert_eq!(attempts, 1);
+}
+
+#[test]
+fn test_retry_temporary_then_permanent() {
+    let mut attempts = 0;
+    let result: Result<(), _> = with_retry(5, || {
+        attempts += 1;
+        if attempts <= 2 {
+            Err(Context::new(TestError::temporary("retry me")))
+        } else {
+            Err(Context::new(TestError::permanent("fatal")))
+        }
+    });
+
+    assert_eq!(attempts, 3);
+    let outcome = result.unwrap_err();
+    assert!(outcome.is_permanent());
+    assert_eq!(outcome.inner().message, "fatal");
+}
+
+#[test]
+fn test_retry_outcome_error_source() {
+    let result: Result<(), _> =
+        with_retry(1, || Err(Context::new(TestError::permanent("source test"))));
+    let outcome = result.unwrap_err();
+    let source = core::error::Error::source(&outcome);
+    assert!(source.is_some());
+    assert_eq!(format!("{}", source.unwrap()), "source test");
 }
 
 // with_retry_delay Tests
@@ -734,15 +850,6 @@ fn test_exponential_backoff_caps_at_max() {
     assert_eq!(backoff(31), max);
 }
 
-// Ctx Type Alias Test
-
-#[test]
-fn test_ctx_type_alias() {
-    let err = TestError::temporary("alias test");
-    let ctx: Ctx<TestError> = Context::new(err);
-    assert_eq!(ctx.inner().message, "alias test");
-}
-
 // actionable! Macro Tests
 
 #[test]
@@ -779,6 +886,50 @@ fn test_actionable_macro_custom() {
 
     assert!(CustomErr(true).is_retryable());
     assert!(!CustomErr(false).is_retryable());
+}
+
+// display_error! Macro Tests
+
+#[test]
+fn test_display_error_unit_variant() {
+    display_error! {
+        pub enum UnitErr {
+            #[display("not found")]
+            NotFound,
+            #[display("timed out")]
+            Timeout,
+        }
+    }
+
+    assert_eq!(format!("{}", UnitErr::NotFound), "not found");
+    assert_eq!(format!("{}", UnitErr::Timeout), "timed out");
+    // Verify Error trait is implemented
+    let _: &dyn core::error::Error = &UnitErr::NotFound;
+}
+
+#[test]
+fn test_display_error_struct_variant() {
+    display_error! {
+        pub enum StructErr {
+            #[display("checksum mismatch: expected {expected:#x}, got {actual:#x}")]
+            Checksum { expected: u32, actual: u32 },
+            #[display("I/O error")]
+            Io,
+        }
+    }
+
+    let err = StructErr::Checksum {
+        expected: 0xAB,
+        actual: 0xCD,
+    };
+    assert_eq!(
+        format!("{err}"),
+        "checksum mismatch: expected 0xab, got 0xcd"
+    );
+    assert_eq!(format!("{}", StructErr::Io), "I/O error");
+    // Debug is derived
+    let debug = alloc::format!("{err:?}");
+    assert!(debug.contains("Checksum"));
 }
 
 // Result Extension on Ok Path Tests
@@ -888,14 +1039,6 @@ fn test_option_wrap_ctx_lazy_some() {
     assert!(!called);
 }
 
-// StderrSpout Test
-
-#[cfg(feature = "std")]
-#[test]
-fn test_stderr_spout_constructable() {
-    let _spout = StderrSpout::new();
-}
-
 // Backtrace Tests
 
 #[cfg(feature = "std")]
@@ -917,7 +1060,11 @@ fn test_backtrace_survives_resolve() {
     let Resolved::Temporary(temp) = ctx.resolve() else {
         panic!("expected Temporary");
     };
-    let _bt = temp.backtrace();
+    let bt = temp.backtrace();
+    assert!(
+        bt.status() == std::backtrace::BacktraceStatus::Disabled
+            || bt.status() == std::backtrace::BacktraceStatus::Captured
+    );
 }
 
 #[cfg(feature = "std")]
@@ -928,21 +1075,33 @@ fn test_backtrace_survives_exhaust() {
         panic!("expected Temporary");
     };
     let exhausted = temp.exhaust();
-    let _bt = exhausted.backtrace();
+    let bt = exhausted.backtrace();
+    assert!(
+        bt.status() == std::backtrace::BacktraceStatus::Disabled
+            || bt.status() == std::backtrace::BacktraceStatus::Captured
+    );
 }
 
 #[cfg(feature = "std")]
 #[test]
 fn test_backtrace_on_bounded() {
     let ctx = Context::bounded(TestError::temporary("test"), 5);
-    let _bt = ctx.backtrace();
+    let bt = ctx.backtrace();
+    assert!(
+        bt.status() == std::backtrace::BacktraceStatus::Disabled
+            || bt.status() == std::backtrace::BacktraceStatus::Captured
+    );
 }
 
 #[cfg(feature = "std")]
 #[test]
 fn test_backtrace_on_bounded_collect() {
     let ctx = Context::bounded_collect(TestError::temporary("test"), 5);
-    let _bt = ctx.backtrace();
+    let bt = ctx.backtrace();
+    assert!(
+        bt.status() == std::backtrace::BacktraceStatus::Disabled
+            || bt.status() == std::backtrace::BacktraceStatus::Captured
+    );
 }
 
 #[cfg(feature = "std")]
