@@ -34,7 +34,6 @@ impl<S> SpoutCell<S> {
 }
 
 unsafe impl<S: Send> Send for SpoutCell<S> {}
-unsafe impl<S: Send> Sync for SpoutCell<S> {}
 
 // CellIndex
 
