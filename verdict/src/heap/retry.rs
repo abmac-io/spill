@@ -5,7 +5,7 @@ use core::fmt::{self, Display};
 
 use spout::DropSpout;
 
-use crate::{Actionable, Contextualized, Dynamic, Frame, Permanent, Persistent};
+use crate::{Actionable, Context, Dynamic, Exhausted, Frame, Permanent};
 
 /// Outcome of a retry operation.
 #[non_exhaustive]
@@ -14,9 +14,9 @@ where
     Overflow: spout::Spout<Frame, Error = core::convert::Infallible>,
 {
     /// Error was permanent from the start.
-    Permanent(Contextualized<E, Permanent, Overflow>),
+    Permanent(Context<E, Permanent, Overflow>),
     /// Error was temporary but retries are exhausted.
-    Exhausted(Contextualized<E, Persistent, Overflow>),
+    Exhausted(Context<E, Exhausted, Overflow>),
 }
 
 impl<E: Display, Overflow: spout::Spout<Frame, Error = core::convert::Infallible>> Display
@@ -90,7 +90,7 @@ impl<E, Overflow: spout::Spout<Frame, Error = core::convert::Infallible>>
 /// # Example
 ///
 /// ```
-/// use verdict::{with_retry, Actionable, ErrorStatusValue, Contextualized};
+/// use verdict::{with_retry, Actionable, ErrorStatusValue, Context};
 ///
 /// #[derive(Debug)]
 /// struct ApiError { retryable: bool }
@@ -115,7 +115,7 @@ impl<E, Overflow: spout::Spout<Frame, Error = core::convert::Infallible>>
 ///
 /// let result: Result<(), _> = with_retry(3, || {
 ///     // Simulate an operation
-///     Err(Contextualized::new(ApiError { retryable: true })
+///     Err(Context::new(ApiError { retryable: true })
 ///         .with_ctx("calling external API"))
 /// });
 ///
@@ -127,7 +127,7 @@ impl<E, Overflow: spout::Spout<Frame, Error = core::convert::Infallible>>
 pub fn with_retry<T, E, F>(max_attempts: u32, mut f: F) -> Result<T, RetryOutcome<E>>
 where
     E: Actionable,
-    F: FnMut() -> Result<T, Contextualized<E, Dynamic>>,
+    F: FnMut() -> Result<T, Context<E, Dynamic>>,
 {
     let max_attempts = max_attempts.max(1);
 
@@ -169,7 +169,7 @@ pub fn with_retry_delay<T, E, F, D>(
 ) -> Result<T, RetryOutcome<E>>
 where
     E: Actionable,
-    F: FnMut() -> Result<T, Contextualized<E, Dynamic>>,
+    F: FnMut() -> Result<T, Context<E, Dynamic>>,
     D: FnMut(u32) -> std::time::Duration,
 {
     let max_attempts = max_attempts.max(1);

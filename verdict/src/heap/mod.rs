@@ -1,18 +1,18 @@
 //! Allocation-dependent error handling types.
 //!
 //! This module contains all types that require heap allocation:
-//! context frames, the `Contextualized` error wrapper, result extension
+//! context frames, the `Context` error wrapper, result extension
 //! traits, retry helpers, and overflow sink implementations.
 
-mod contextualized;
+mod context;
 mod ext;
 mod frame;
 mod log_record;
 mod retry;
 mod sinks;
 
-pub use contextualized::Contextualized;
-pub use ext::{ContextExt, IntoContextualized, OptionExt, ResultExt};
+pub use context::Context;
+pub use ext::{ContextExt, IntoContext, OptionExt, ResultExt};
 pub use frame::Frame;
 pub use log_record::{FrameRecord, LogRecord};
 pub use retry::{RetryOutcome, with_retry};

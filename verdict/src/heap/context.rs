@@ -57,7 +57,7 @@ use crate::{
 ///                        │ exhaust()
 ///                        ▼
 ///                  ┌──────────┐
-///                  │Exhausted │
+///                  │Exhausted│
 ///                  └──────────┘
 /// ```
 pub struct Context<

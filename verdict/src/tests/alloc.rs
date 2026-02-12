@@ -41,12 +41,12 @@ impl Actionable for TestError {
     }
 }
 
-// Contextualized Tests
+// Context Tests
 
 #[test]
 fn test_contextualized_new() {
     let err = TestError::temporary("test error");
-    let ctx = Contextualized::new(err);
+    let ctx = Context::new(err);
 
     assert_eq!(ctx.inner().message, "test error");
     assert!(ctx.frames().is_empty());
@@ -56,9 +56,7 @@ fn test_contextualized_new() {
 #[test]
 fn test_contextualized_with_ctx() {
     let err = TestError::temporary("test error");
-    let ctx = Contextualized::new(err)
-        .with_ctx("layer 1")
-        .with_ctx("layer 2");
+    let ctx = Context::new(err).with_ctx("layer 1").with_ctx("layer 2");
 
     assert_eq!(ctx.frames().len(), 2);
     assert!(ctx.frames()[0].msg().contains("layer 1"));
@@ -68,7 +66,7 @@ fn test_contextualized_with_ctx() {
 #[test]
 fn test_contextualized_refine_temporary() {
     let err = TestError::temporary("test error");
-    let ctx = Contextualized::new(err);
+    let ctx = Context::new(err);
 
     let result = ctx.resolve();
     assert!(result.is_ok());
@@ -80,7 +78,7 @@ fn test_contextualized_refine_temporary() {
 #[test]
 fn test_contextualized_refine_permanent() {
     let err = TestError::permanent("test error");
-    let ctx = Contextualized::new(err);
+    let ctx = Context::new(err);
 
     let result = ctx.resolve();
     assert!(result.is_err());
@@ -92,7 +90,7 @@ fn test_contextualized_refine_permanent() {
 #[test]
 fn test_contextualized_exhaust() {
     let err = TestError::temporary("test error");
-    let ctx = Contextualized::new(err);
+    let ctx = Context::new(err);
 
     let temp = ctx.resolve().unwrap();
     let persistent = temp.exhaust();
@@ -104,7 +102,7 @@ fn test_contextualized_exhaust() {
 fn test_contextualized_overflow() {
     let err = TestError::temporary("test error");
     let overflow = CollectSpout::new();
-    let mut ctx = Contextualized::with_overflow(err, overflow, 2);
+    let mut ctx = Context::with_overflow(err, overflow, 2);
 
     ctx = ctx
         .with_ctx("frame 1")
@@ -131,7 +129,7 @@ fn test_contextualized_overflow() {
 #[test]
 fn test_contextualized_display() {
     let err = TestError::temporary("root cause");
-    let ctx = Contextualized::new(err)
+    let ctx = Context::new(err)
         .with_ctx("doing thing A")
         .with_ctx("doing thing B");
 
@@ -145,7 +143,7 @@ fn test_contextualized_display() {
 #[test]
 fn test_contextualized_display_with_overflow() {
     let err = TestError::temporary("root cause");
-    let ctx = Contextualized::with_overflow(err, DropSpout, 1)
+    let ctx = Context::with_overflow(err, DropSpout, 1)
         .with_ctx("frame 1")
         .with_ctx("frame 2");
 
@@ -170,8 +168,8 @@ fn test_result_ext_wrap_ctx() {
 
 #[test]
 fn test_result_ext_with_ctx() {
-    let result: Result<(), Contextualized<TestError>> =
-        Err(Contextualized::new(TestError::temporary("test")).with_ctx("ctx1"));
+    let result: Result<(), Context<TestError>> =
+        Err(Context::new(TestError::temporary("test")).with_ctx("ctx1"));
 
     let ctx = result.with_ctx("ctx2");
 
@@ -188,7 +186,7 @@ fn test_retry_success_first_try() {
 
     let result = with_retry(3, || {
         attempts += 1;
-        Ok::<_, Contextualized<TestError>>(42)
+        Ok::<_, Context<TestError>>(42)
     });
 
     assert_eq!(result.unwrap(), 42);
@@ -202,7 +200,7 @@ fn test_retry_success_after_failures() {
     let result = with_retry(3, || {
         attempts += 1;
         if attempts < 3 {
-            Err(Contextualized::new(TestError::temporary("try again")))
+            Err(Context::new(TestError::temporary("try again")))
         } else {
             Ok(42)
         }
@@ -218,7 +216,7 @@ fn test_retry_exhausted() {
 
     let result: Result<(), _> = with_retry(3, || {
         attempts += 1;
-        Err(Contextualized::new(TestError::temporary("always fails")))
+        Err(Context::new(TestError::temporary("always fails")))
     });
 
     assert!(result.is_err());
@@ -233,7 +231,7 @@ fn test_retry_permanent_stops_immediately() {
 
     let result: Result<(), _> = with_retry(3, || {
         attempts += 1;
-        Err(Contextualized::new(TestError::permanent("permanent error")))
+        Err(Context::new(TestError::permanent("permanent error")))
     });
 
     assert!(result.is_err());
@@ -289,7 +287,7 @@ fn test_tee_spout() {
 #[test]
 fn test_contextualized_actionable() {
     let err = TestError::temporary("test");
-    let ctx = Contextualized::new(err);
+    let ctx = Context::new(err);
 
     assert_eq!(ctx.status_value(), ErrorStatusValue::Temporary);
 }
@@ -297,7 +295,7 @@ fn test_contextualized_actionable() {
 #[test]
 fn test_refined_actionable_uses_compile_time_status() {
     let err = TestError::temporary("test");
-    let ctx = Contextualized::new(err);
+    let ctx = Context::new(err);
     let temp = ctx.resolve().unwrap();
 
     // Even if inner error somehow changed, the typestate controls status
@@ -373,7 +371,7 @@ fn test_frame_equality() {
 #[test]
 fn test_contextualized_bounded() {
     let err = TestError::temporary("bounded test");
-    let ctx = Contextualized::bounded(err, 2)
+    let ctx = Context::bounded(err, 2)
         .with_ctx("frame 1")
         .with_ctx("frame 2")
         .with_ctx("frame 3");
@@ -387,7 +385,7 @@ fn test_contextualized_bounded() {
 #[test]
 fn test_contextualized_bounded_collect() {
     let err = TestError::temporary("bounded collect test");
-    let ctx = Contextualized::bounded_collect(err, 2)
+    let ctx = Context::bounded_collect(err, 2)
         .with_ctx("frame 1")
         .with_ctx("frame 2")
         .with_ctx("frame 3");
@@ -403,7 +401,7 @@ fn test_contextualized_bounded_collect() {
 #[test]
 fn test_contextualized_bounded_zero_clamps_to_one() {
     let err = TestError::temporary("clamp test");
-    let ctx = Contextualized::bounded(err, 0)
+    let ctx = Context::bounded(err, 0)
         .with_ctx("frame 1")
         .with_ctx("frame 2");
 
@@ -439,8 +437,7 @@ fn test_wrap_ctx_lazy_not_called_on_ok() {
 
 #[test]
 fn test_with_ctx_lazy() {
-    let result: Result<(), Contextualized<TestError>> =
-        Err(Contextualized::new(TestError::temporary("test")));
+    let result: Result<(), Context<TestError>> = Err(Context::new(TestError::temporary("test")));
     let ctx = result.with_ctx_lazy(|| format!("lazy {}", "context"));
 
     let err = ctx.unwrap_err();
@@ -451,7 +448,7 @@ fn test_with_ctx_lazy() {
 #[test]
 fn test_with_ctx_lazy_not_called_on_ok() {
     let mut called = false;
-    let result: Result<i32, Contextualized<TestError>> = Ok(42);
+    let result: Result<i32, Context<TestError>> = Ok(42);
     let ok = result.with_ctx_lazy(|| {
         called = true;
         "should not run".into()
@@ -473,12 +470,12 @@ fn test_wrap_ctx_bounded() {
     assert!(err.frames()[0].msg().contains("bounded context"));
 }
 
-// IntoContextualized Tests
+// IntoContext Tests
 
 #[test]
 fn test_into_ctx() {
     let err = TestError::temporary("into test");
-    let ctx: Contextualized<TestError> = err.into_ctx();
+    let ctx: Context<TestError> = err.into_ctx();
 
     assert_eq!(ctx.inner().message, "into test");
     assert!(ctx.frames().is_empty());
@@ -582,7 +579,7 @@ fn test_actionable_box() {
 
 #[test]
 fn test_assert_depth_passes() {
-    let ctx = Contextualized::new(TestError::temporary("test"))
+    let ctx = Context::new(TestError::temporary("test"))
         .with_ctx("frame 1")
         .with_ctx("frame 2")
         .assert_depth(2);
@@ -592,13 +589,13 @@ fn test_assert_depth_passes() {
 
 #[test]
 fn test_assert_depth_zero() {
-    let ctx = Contextualized::new(TestError::temporary("test")).assert_depth(0);
+    let ctx = Context::new(TestError::temporary("test")).assert_depth(0);
     assert!(ctx.frames().is_empty());
 }
 
 #[test]
 fn test_assert_origin_passes() {
-    let ctx = Contextualized::new(TestError::temporary("test"))
+    let ctx = Context::new(TestError::temporary("test"))
         .with_ctx("from module")
         .assert_origin("alloc.rs");
 
@@ -609,9 +606,8 @@ fn test_assert_origin_passes() {
 
 #[test]
 fn test_retry_outcome_inner() {
-    let result: Result<(), _> = with_retry(1, || {
-        Err(Contextualized::new(TestError::temporary("inner test")))
-    });
+    let result: Result<(), _> =
+        with_retry(1, || Err(Context::new(TestError::temporary("inner test"))));
     let outcome = result.unwrap_err();
     assert_eq!(outcome.inner().message, "inner test");
 }
@@ -619,7 +615,7 @@ fn test_retry_outcome_inner() {
 #[test]
 fn test_retry_outcome_frames() {
     let result: Result<(), _> = with_retry(2, || {
-        Err(Contextualized::new(TestError::temporary("test")).with_ctx("some context"))
+        Err(Context::new(TestError::temporary("test")).with_ctx("some context"))
     });
     let outcome = result.unwrap_err();
     assert!(!outcome.frames().is_empty());
@@ -628,7 +624,7 @@ fn test_retry_outcome_frames() {
 #[test]
 fn test_retry_outcome_display() {
     let result: Result<(), _> = with_retry(1, || {
-        Err(Contextualized::new(TestError::temporary("display test")))
+        Err(Context::new(TestError::temporary("display test")))
     });
     let outcome = result.unwrap_err();
     let display = format!("{outcome}");
@@ -637,9 +633,8 @@ fn test_retry_outcome_display() {
 
 #[test]
 fn test_retry_outcome_debug() {
-    let result: Result<(), _> = with_retry(1, || {
-        Err(Contextualized::new(TestError::permanent("debug test")))
-    });
+    let result: Result<(), _> =
+        with_retry(1, || Err(Context::new(TestError::permanent("debug test"))));
     let outcome = result.unwrap_err();
     let debug = format!("{outcome:?}");
     assert!(debug.contains("Permanent"));
@@ -650,7 +645,7 @@ fn test_retry_max_attempts_zero_clamps_to_one() {
     let mut attempts = 0;
     let result: Result<(), _> = with_retry(0, || {
         attempts += 1;
-        Err(Contextualized::new(TestError::temporary("test")))
+        Err(Context::new(TestError::temporary("test")))
     });
     assert!(result.is_err());
     assert_eq!(attempts, 1);
@@ -668,7 +663,7 @@ fn test_with_retry_delay_success() {
         || {
             attempts += 1;
             if attempts < 2 {
-                Err(Contextualized::new(TestError::temporary("retry")))
+                Err(Context::new(TestError::temporary("retry")))
             } else {
                 Ok(42)
             }
@@ -687,7 +682,7 @@ fn test_with_retry_delay_exhausted() {
         |_| std::time::Duration::from_millis(1),
         || {
             attempts += 1;
-            Err(Contextualized::new(TestError::temporary("always fails")))
+            Err(Context::new(TestError::temporary("always fails")))
         },
     );
     assert!(result.unwrap_err().is_exhausted());
@@ -703,7 +698,7 @@ fn test_with_retry_delay_permanent_stops() {
         |_| std::time::Duration::from_millis(1),
         || {
             attempts += 1;
-            Err(Contextualized::new(TestError::permanent("fatal")))
+            Err(Context::new(TestError::permanent("fatal")))
         },
     );
     assert!(result.unwrap_err().is_permanent());
@@ -742,7 +737,7 @@ fn test_exponential_backoff_caps_at_max() {
 #[test]
 fn test_ctx_type_alias() {
     let err = TestError::temporary("alias test");
-    let ctx: Ctx<TestError> = Contextualized::new(err);
+    let ctx: Ctx<TestError> = Context::new(err);
     assert_eq!(ctx.inner().message, "alias test");
 }
 
@@ -794,7 +789,7 @@ fn test_wrap_ctx_ok_passes_through() {
 
 #[test]
 fn test_with_ctx_ok_passes_through() {
-    let result: Result<i32, Contextualized<TestError>> = Ok(42);
+    let result: Result<i32, Context<TestError>> = Ok(42);
     assert_eq!(result.with_ctx("context").unwrap(), 42);
 }
 
@@ -802,7 +797,7 @@ fn test_with_ctx_ok_passes_through() {
 
 #[test]
 fn test_bail() {
-    fn inner() -> Result<(), Contextualized<TestError>> {
+    fn inner() -> Result<(), Context<TestError>> {
         bail!(TestError::permanent("bail test"));
     }
     let err = inner().unwrap_err();
@@ -811,7 +806,7 @@ fn test_bail() {
 
 #[test]
 fn test_bail_ok_path() {
-    fn inner(fail: bool) -> Result<i32, Contextualized<TestError>> {
+    fn inner(fail: bool) -> Result<i32, Context<TestError>> {
         if fail {
             bail!(TestError::permanent("fail"));
         }
@@ -823,7 +818,7 @@ fn test_bail_ok_path() {
 
 #[test]
 fn test_ensure_passes() {
-    fn inner(x: i32) -> Result<i32, Contextualized<TestError>> {
+    fn inner(x: i32) -> Result<i32, Context<TestError>> {
         ensure!(x > 0, TestError::permanent("must be positive"));
         Ok(x)
     }
@@ -832,7 +827,7 @@ fn test_ensure_passes() {
 
 #[test]
 fn test_ensure_fails() {
-    fn inner(x: i32) -> Result<i32, Contextualized<TestError>> {
+    fn inner(x: i32) -> Result<i32, Context<TestError>> {
         ensure!(x > 0, TestError::permanent("must be positive"));
         Ok(x)
     }
@@ -904,7 +899,7 @@ fn test_stderr_spout_constructable() {
 #[cfg(feature = "std")]
 #[test]
 fn test_backtrace_accessor() {
-    let ctx = Contextualized::new(TestError::temporary("test"));
+    let ctx = Context::new(TestError::temporary("test"));
     let bt = ctx.backtrace();
     // Without RUST_BACKTRACE set, status is Disabled
     assert!(
@@ -916,7 +911,7 @@ fn test_backtrace_accessor() {
 #[cfg(feature = "std")]
 #[test]
 fn test_backtrace_survives_resolve() {
-    let ctx = Contextualized::new(TestError::temporary("test"));
+    let ctx = Context::new(TestError::temporary("test"));
     let temp = ctx.resolve().unwrap();
     let _bt = temp.backtrace();
 }
@@ -924,7 +919,7 @@ fn test_backtrace_survives_resolve() {
 #[cfg(feature = "std")]
 #[test]
 fn test_backtrace_survives_exhaust() {
-    let ctx = Contextualized::new(TestError::temporary("test"));
+    let ctx = Context::new(TestError::temporary("test"));
     let temp = ctx.resolve().unwrap();
     let persistent = temp.exhaust();
     let _bt = persistent.backtrace();
@@ -933,21 +928,21 @@ fn test_backtrace_survives_exhaust() {
 #[cfg(feature = "std")]
 #[test]
 fn test_backtrace_on_bounded() {
-    let ctx = Contextualized::bounded(TestError::temporary("test"), 5);
+    let ctx = Context::bounded(TestError::temporary("test"), 5);
     let _bt = ctx.backtrace();
 }
 
 #[cfg(feature = "std")]
 #[test]
 fn test_backtrace_on_bounded_collect() {
-    let ctx = Contextualized::bounded_collect(TestError::temporary("test"), 5);
+    let ctx = Context::bounded_collect(TestError::temporary("test"), 5);
     let _bt = ctx.backtrace();
 }
 
 #[cfg(feature = "std")]
 #[test]
 fn test_backtrace_in_display() {
-    let ctx = Contextualized::new(TestError::temporary("root cause"));
+    let ctx = Context::new(TestError::temporary("root cause"));
     // We can't control RUST_BACKTRACE in tests, but we can verify the Display
     // path doesn't panic regardless of backtrace status
     let display = format!("{ctx}");
@@ -962,7 +957,7 @@ const _: () = {
     const fn is_send_sync<T: Send + Sync>() {}
 
     is_send_sync::<Frame>();
-    is_send_sync::<Contextualized<TestError>>();
+    is_send_sync::<Context<TestError>>();
     is_send_sync::<RetryOutcome<TestError>>();
     is_send_sync::<FrameFormatter>();
     is_send_sync::<CountingSpout>();
@@ -1001,7 +996,7 @@ mod bytecast_tests {
         let values = [
             ErrorStatusValue::Permanent,
             ErrorStatusValue::Temporary,
-            ErrorStatusValue::Persistent,
+            ErrorStatusValue::Exhausted,
         ];
         for val in &values {
             let bytes = val.to_vec().unwrap();
@@ -1042,12 +1037,12 @@ mod bytecast_tests {
             status_val: 1,
             message: alloc::string::String::from("timeout"),
         };
-        let ctx = Contextualized::new(err)
+        let ctx = Context::new(err)
             .with_ctx("connecting to db")
             .with_ctx("handling request");
 
         let bytes = ctx.to_vec().unwrap();
-        let (decoded, consumed): (Contextualized<SerTestError>, usize) =
+        let (decoded, consumed): (Context<SerTestError>, usize) =
             FromBytes::from_bytes(&bytes).unwrap();
 
         assert_eq!(decoded.inner().message, "timeout");
@@ -1065,11 +1060,10 @@ mod bytecast_tests {
             status_val: 0,
             message: alloc::string::String::from("not found"),
         };
-        let ctx = Contextualized::new(err).with_ctx("lookup");
+        let ctx = Context::new(err).with_ctx("lookup");
 
         let bytes = ctx.to_vec().unwrap();
-        let (decoded, _): (Contextualized<SerTestError>, _) =
-            FromBytes::from_bytes(&bytes).unwrap();
+        let (decoded, _): (Context<SerTestError>, _) = FromBytes::from_bytes(&bytes).unwrap();
 
         // Overflow should be DropSpout (default)
         assert!(!decoded.has_overflow());
@@ -1083,7 +1077,7 @@ mod bytecast_tests {
             status_val: 1,
             message: alloc::string::String::from("retry me"),
         };
-        let ctx = Contextualized::bounded(err, 2)
+        let ctx = Context::bounded(err, 2)
             .with_ctx("frame 1")
             .with_ctx("frame 2")
             .with_ctx("frame 3");
@@ -1092,8 +1086,7 @@ mod bytecast_tests {
         assert_eq!(ctx.frames().len(), 2);
 
         let bytes = ctx.to_vec().unwrap();
-        let (decoded, _): (Contextualized<SerTestError>, _) =
-            FromBytes::from_bytes(&bytes).unwrap();
+        let (decoded, _): (Context<SerTestError>, _) = FromBytes::from_bytes(&bytes).unwrap();
 
         // Frames and overflow_count are preserved
         assert_eq!(decoded.frames().len(), 2);
@@ -1111,7 +1104,7 @@ mod serde_tests {
 
     #[test]
     fn test_log_record_from_contextualized() {
-        let err = Contextualized::new(TestError::temporary("timeout"))
+        let err = Context::new(TestError::temporary("timeout"))
             .with_ctx("connecting to db")
             .with_ctx("handling request");
 
@@ -1128,7 +1121,7 @@ mod serde_tests {
 
     #[test]
     fn test_log_record_serde_json() {
-        let err = Contextualized::new(TestError::temporary("timeout")).with_ctx("connecting to db");
+        let err = Context::new(TestError::temporary("timeout")).with_ctx("connecting to db");
 
         let record = LogRecord::from(&err);
         let json: serde_json::Value = serde_json::to_value(&record).unwrap();
@@ -1141,7 +1134,7 @@ mod serde_tests {
 
     #[test]
     fn test_log_record_permanent() {
-        let err = Contextualized::new(TestError::permanent("not found")).with_ctx("lookup");
+        let err = Context::new(TestError::permanent("not found")).with_ctx("lookup");
         let record = LogRecord::from(&err);
 
         assert_eq!(record.status, "permanent");
@@ -1150,7 +1143,7 @@ mod serde_tests {
 
     #[test]
     fn test_log_record_with_overflow() {
-        let err = Contextualized::bounded(TestError::temporary("test"), 2)
+        let err = Context::bounded(TestError::temporary("test"), 2)
             .with_ctx("frame 1")
             .with_ctx("frame 2")
             .with_ctx("frame 3");
@@ -1163,7 +1156,7 @@ mod serde_tests {
 
     #[test]
     fn test_log_record_serde_round_trip() {
-        let err = Contextualized::new(TestError::temporary("timeout")).with_ctx("connecting to db");
+        let err = Context::new(TestError::temporary("timeout")).with_ctx("connecting to db");
 
         let record = LogRecord::from(&err);
         let json = serde_json::to_string(&record).unwrap();
@@ -1184,7 +1177,7 @@ mod facet_tests {
 
     #[test]
     fn test_log_record_facet_json() {
-        let err = Contextualized::new(TestError::temporary("timeout")).with_ctx("connecting to db");
+        let err = Context::new(TestError::temporary("timeout")).with_ctx("connecting to db");
 
         let record = LogRecord::from(&err);
         let json = facet_json::to_string(&record).unwrap();
@@ -1196,7 +1189,7 @@ mod facet_tests {
 
     #[test]
     fn test_log_record_facet_round_trip() {
-        let err = Contextualized::new(TestError::temporary("timeout")).with_ctx("connecting to db");
+        let err = Context::new(TestError::temporary("timeout")).with_ctx("connecting to db");
 
         let record = LogRecord::from(&err);
         let json = facet_json::to_string(&record).unwrap();
