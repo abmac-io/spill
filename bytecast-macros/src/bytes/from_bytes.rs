@@ -2,7 +2,7 @@
 
 use super::{
     disc_capacity, has_boxed_attr, has_skip_attr, reject_enum_field_attrs, repr_int_type,
-    serializable_type,
+    resolve_discriminants, serializable_type,
 };
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -33,7 +33,8 @@ fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
         Data::Enum(data) => {
             let disc_ident = validate_enum(input, data)?;
-            generate_enum(name, data, &disc_ident)
+            let disc_values = resolve_discriminants(data)?;
+            generate_enum(name, data, &disc_ident, &disc_values)
         }
         Data::Union(_) => {
             return Err(syn::Error::new_spanned(
@@ -130,18 +131,23 @@ fn generate_struct(
     }
 }
 
-fn generate_enum(name: &syn::Ident, data: &syn::DataEnum, disc_type: &syn::Ident) -> TokenStream2 {
+fn generate_enum(
+    name: &syn::Ident,
+    data: &syn::DataEnum,
+    disc_type: &syn::Ident,
+    disc_values: &[i128],
+) -> TokenStream2 {
     let match_arms: Vec<_> = data
         .variants
         .iter()
-        .enumerate()
-        .map(|(idx, variant)| {
+        .zip(disc_values)
+        .map(|(variant, &disc_val)| {
             let variant_name = &variant.ident;
-            let idx_lit = syn::LitInt::new(&idx.to_string(), proc_macro2::Span::call_site());
+            let disc_lit = syn::LitInt::new(&disc_val.to_string(), proc_macro2::Span::call_site());
 
             match &variant.fields {
                 Fields::Unit => quote! {
-                    #idx_lit => Ok((#name::#variant_name, offset))
+                    #disc_lit => Ok((#name::#variant_name, offset))
                 },
                 Fields::Unnamed(fields) => {
                     let names: Vec<_> = (0..fields.unnamed.len())
@@ -157,7 +163,7 @@ fn generate_enum(name: &syn::Ident, data: &syn::DataEnum, disc_type: &syn::Ident
                         })
                         .collect();
                     quote! {
-                        #idx_lit => {
+                        #disc_lit => {
                             #(#reads)*
                             Ok((#name::#variant_name(#(#names),*), offset))
                         }
@@ -176,7 +182,7 @@ fn generate_enum(name: &syn::Ident, data: &syn::DataEnum, disc_type: &syn::Ident
                         })
                         .collect();
                     quote! {
-                        #idx_lit => {
+                        #disc_lit => {
                             #(#reads)*
                             Ok((#name::#variant_name { #(#names),* }, offset))
                         }

@@ -2,7 +2,7 @@
 
 use super::{
     disc_capacity, has_boxed_attr, has_skip_attr, reject_enum_field_attrs, repr_int_type,
-    serializable_type,
+    resolve_discriminants, serializable_type,
 };
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -31,8 +31,9 @@ fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         ),
         Data::Enum(data) => {
             let disc_ident = validate_enum(input, data)?;
+            let disc_values = resolve_discriminants(data)?;
             (
-                generate_enum(data, &disc_ident),
+                generate_enum(data, &disc_ident, &disc_values),
                 generate_byte_len_enum(data, &disc_ident),
                 generate_max_size_enum(data, &disc_ident),
             )
@@ -176,16 +177,20 @@ fn generate_max_size_struct(fields: &Fields) -> syn::Result<TokenStream2> {
     })
 }
 
-fn generate_enum(data: &syn::DataEnum, disc_type: &syn::Ident) -> TokenStream2 {
+fn generate_enum(
+    data: &syn::DataEnum,
+    disc_type: &syn::Ident,
+    disc_values: &[i128],
+) -> TokenStream2 {
     let match_arms: Vec<_> = data
         .variants
         .iter()
-        .enumerate()
-        .map(|(idx, variant)| {
+        .zip(disc_values)
+        .map(|(variant, &disc_val)| {
             let variant_name = &variant.ident;
-            let idx_lit = syn::LitInt::new(&idx.to_string(), proc_macro2::Span::call_site());
+            let disc_lit = syn::LitInt::new(&disc_val.to_string(), proc_macro2::Span::call_site());
             let disc_write = quote! {
-                let written = bytecast::ToBytes::to_bytes(&(#idx_lit as #disc_type), &mut buf[offset..])?;
+                let written = bytecast::ToBytes::to_bytes(&(#disc_lit as #disc_type), &mut buf[offset..])?;
                 offset += written;
             };
 
