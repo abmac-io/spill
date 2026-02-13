@@ -85,7 +85,10 @@ impl FromBytes for usize {
     #[inline]
     fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
         let (v, n) = u64::from_bytes(buf)?;
-        Ok((v as usize, n))
+        let val = usize::try_from(v).map_err(|_| BytesError::InvalidData {
+            message: "u64 value exceeds usize on this platform",
+        })?;
+        Ok((val, n))
     }
 }
 
@@ -103,7 +106,10 @@ impl FromBytes for isize {
     #[inline]
     fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
         let (v, n) = i64::from_bytes(buf)?;
-        Ok((v as isize, n))
+        let val = isize::try_from(v).map_err(|_| BytesError::InvalidData {
+            message: "i64 value exceeds isize on this platform",
+        })?;
+        Ok((val, n))
     }
 }
 

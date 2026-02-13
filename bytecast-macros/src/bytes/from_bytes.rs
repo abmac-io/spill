@@ -1,6 +1,9 @@
 //! FromBytes derive macro implementation.
 
-use super::{disc_capacity, has_boxed_attr, has_skip_attr, repr_int_type, serializable_type};
+use super::{
+    disc_capacity, field_type_bounds, has_boxed_attr, has_skip_attr, reject_enum_field_attrs,
+    repr_int_type, resolve_discriminants, serializable_type, validate_struct_field_attrs,
+};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -17,12 +20,17 @@ pub fn derive_from_bytes(input: TokenStream) -> TokenStream {
 
 fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
-    let generics = &input.generics;
+    let mut generics = input.generics.clone();
+    let extra_bounds = field_type_bounds(input, syn::parse_quote!(bytecast::FromBytes))?;
+    if !extra_bounds.is_empty() {
+        generics.make_where_clause().predicates.extend(extra_bounds);
+    }
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let body = match &input.data {
         Data::Struct(data) => {
-            let (reads, constructor) = generate_struct(name, &data.fields);
+            validate_struct_field_attrs(&data.fields)?;
+            let (reads, constructor) = generate_struct(name, &data.fields)?;
             quote! {
                 #reads
                 Ok((#constructor, offset))
@@ -30,7 +38,8 @@ fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
         Data::Enum(data) => {
             let disc_ident = validate_enum(input, data)?;
-            generate_enum(name, data, &disc_ident)
+            let disc_values = resolve_discriminants(data)?;
+            generate_enum(name, data, &disc_ident, &disc_values)
         }
         Data::Union(_) => {
             return Err(syn::Error::new_spanned(
@@ -66,31 +75,35 @@ fn validate_enum(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<syn::
             ),
         ));
     }
+    reject_enum_field_attrs(data)?;
     Ok(disc_ident)
 }
 
 /// Generate a read statement for a single struct field.
-fn field_read(field: &syn::Field, var_name: &syn::Ident) -> TokenStream2 {
+fn field_read(field: &syn::Field, var_name: &syn::Ident) -> syn::Result<TokenStream2> {
     let field_type = &field.ty;
 
     if has_skip_attr(field) {
-        return quote! { let #var_name: #field_type = Default::default(); };
+        return Ok(quote! { let #var_name: #field_type = Default::default(); });
     }
 
-    let ser_type = serializable_type(field);
+    let ser_type = serializable_type(field)?;
     let read = quote! {
         let (val, consumed) = <#ser_type as bytecast::FromBytes>::from_bytes(&buf[offset..])?;
         offset += consumed;
     };
 
     if has_boxed_attr(field) {
-        quote! { #read let #var_name = Box::new(val); }
+        Ok(quote! { #read let #var_name = Box::new(val); })
     } else {
-        quote! { #read let #var_name = val; }
+        Ok(quote! { #read let #var_name = val; })
     }
 }
 
-fn generate_struct(name: &syn::Ident, fields: &Fields) -> (TokenStream2, TokenStream2) {
+fn generate_struct(
+    name: &syn::Ident,
+    fields: &Fields,
+) -> syn::Result<(TokenStream2, TokenStream2)> {
     match fields {
         Fields::Named(named) => {
             let reads: Vec<_> = named
@@ -100,12 +113,12 @@ fn generate_struct(name: &syn::Ident, fields: &Fields) -> (TokenStream2, TokenSt
                     let var = f.ident.clone().unwrap();
                     field_read(f, &var)
                 })
-                .collect();
+                .collect::<syn::Result<_>>()?;
             let field_names: Vec<_> = named.named.iter().map(|f| &f.ident).collect();
-            (
+            Ok((
                 quote! { #(#reads)* },
                 quote! { #name { #(#field_names),* } },
-            )
+            ))
         }
         Fields::Unnamed(unnamed) => {
             let var_names: Vec<_> = (0..unnamed.unnamed.len())
@@ -116,25 +129,30 @@ fn generate_struct(name: &syn::Ident, fields: &Fields) -> (TokenStream2, TokenSt
                 .iter()
                 .zip(&var_names)
                 .map(|(f, var)| field_read(f, var))
-                .collect();
-            (quote! { #(#reads)* }, quote! { #name(#(#var_names),*) })
+                .collect::<syn::Result<_>>()?;
+            Ok((quote! { #(#reads)* }, quote! { #name(#(#var_names),*) }))
         }
-        Fields::Unit => (quote! {}, quote! { #name }),
+        Fields::Unit => Ok((quote! {}, quote! { #name })),
     }
 }
 
-fn generate_enum(name: &syn::Ident, data: &syn::DataEnum, disc_type: &syn::Ident) -> TokenStream2 {
+fn generate_enum(
+    name: &syn::Ident,
+    data: &syn::DataEnum,
+    disc_type: &syn::Ident,
+    disc_values: &[i128],
+) -> TokenStream2 {
     let match_arms: Vec<_> = data
         .variants
         .iter()
-        .enumerate()
-        .map(|(idx, variant)| {
+        .zip(disc_values)
+        .map(|(variant, &disc_val)| {
             let variant_name = &variant.ident;
-            let idx_lit = syn::LitInt::new(&idx.to_string(), proc_macro2::Span::call_site());
+            let disc_lit = syn::LitInt::new(&disc_val.to_string(), proc_macro2::Span::call_site());
 
             match &variant.fields {
                 Fields::Unit => quote! {
-                    #idx_lit => Ok((#name::#variant_name, offset))
+                    #disc_lit => Ok((#name::#variant_name, offset))
                 },
                 Fields::Unnamed(fields) => {
                     let names: Vec<_> = (0..fields.unnamed.len())
@@ -150,7 +168,7 @@ fn generate_enum(name: &syn::Ident, data: &syn::DataEnum, disc_type: &syn::Ident
                         })
                         .collect();
                     quote! {
-                        #idx_lit => {
+                        #disc_lit => {
                             #(#reads)*
                             Ok((#name::#variant_name(#(#names),*), offset))
                         }
@@ -169,7 +187,7 @@ fn generate_enum(name: &syn::Ident, data: &syn::DataEnum, disc_type: &syn::Ident
                         })
                         .collect();
                     quote! {
-                        #idx_lit => {
+                        #disc_lit => {
                             #(#reads)*
                             Ok((#name::#variant_name { #(#names),* }, offset))
                         }

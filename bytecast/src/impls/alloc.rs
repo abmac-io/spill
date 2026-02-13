@@ -87,12 +87,20 @@ mod var_int {
     }
 }
 
+/// Checked cast from usize to u32 for length prefixes.
+#[inline]
+fn checked_len(len: usize) -> Result<u32, BytesError> {
+    u32::try_from(len).map_err(|_| BytesError::Custom {
+        message: "collection exceeds u32::MAX length",
+    })
+}
+
 impl<T: ToBytes> ToBytes for Vec<T> {
     const MAX_SIZE: Option<usize> = None; // Variable length
 
     fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, BytesError> {
         // Length prefix as var_int (1-5 bytes depending on size)
-        let len = self.len() as u32;
+        let len = checked_len(self.len())?;
         let mut offset = var_int::encode(len, buf)?;
         for item in self {
             offset += item.to_bytes(&mut buf[offset..])?;
@@ -101,7 +109,7 @@ impl<T: ToBytes> ToBytes for Vec<T> {
     }
 
     fn byte_len(&self) -> Option<usize> {
-        let mut total = var_int::len(self.len() as u32);
+        let mut total = var_int::len(checked_len(self.len()).ok()?);
         for item in self {
             total += item.byte_len()?;
         }
@@ -113,7 +121,7 @@ impl<T: FromBytes> FromBytes for Vec<T> {
     fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
         let (len, mut offset) = var_int::decode(buf)?;
         let len = len as usize;
-        let mut vec = Vec::with_capacity(len);
+        let mut vec = Vec::with_capacity(len.min(buf.len() - offset));
         for _ in 0..len {
             let (item, n) = T::from_bytes(&buf[offset..])?;
             vec.push(item);
@@ -128,7 +136,7 @@ impl<T: ToBytes> ToBytes for VecDeque<T> {
     const MAX_SIZE: Option<usize> = None;
 
     fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, BytesError> {
-        let len = self.len() as u32;
+        let len = checked_len(self.len())?;
         let mut offset = var_int::encode(len, buf)?;
         for item in self {
             offset += item.to_bytes(&mut buf[offset..])?;
@@ -137,7 +145,7 @@ impl<T: ToBytes> ToBytes for VecDeque<T> {
     }
 
     fn byte_len(&self) -> Option<usize> {
-        let mut total = var_int::len(self.len() as u32);
+        let mut total = var_int::len(checked_len(self.len()).ok()?);
         for item in self {
             total += item.byte_len()?;
         }
@@ -149,7 +157,7 @@ impl<T: FromBytes> FromBytes for VecDeque<T> {
     fn from_bytes(buf: &[u8]) -> Result<(Self, usize), BytesError> {
         let (len, mut offset) = var_int::decode(buf)?;
         let len = len as usize;
-        let mut deque = VecDeque::with_capacity(len);
+        let mut deque = VecDeque::with_capacity(len.min(buf.len() - offset));
         for _ in 0..len {
             let (item, n) = T::from_bytes(&buf[offset..])?;
             deque.push_back(item);
@@ -165,7 +173,7 @@ impl ToBytes for String {
     fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, BytesError> {
         let bytes = self.as_bytes();
         // Length prefix as var_int (1-5 bytes depending on size)
-        let len = bytes.len() as u32;
+        let len = checked_len(bytes.len())?;
         let offset = var_int::encode(len, buf)?;
 
         if buf.len() - offset < bytes.len() {
@@ -179,7 +187,7 @@ impl ToBytes for String {
     }
 
     fn byte_len(&self) -> Option<usize> {
-        Some(var_int::len(self.len() as u32) + self.len())
+        Some(var_int::len(checked_len(self.len()).ok()?) + self.len())
     }
 }
 
@@ -212,7 +220,7 @@ impl ToBytes for Cow<'_, str> {
     #[inline]
     fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, BytesError> {
         let bytes = self.as_bytes();
-        let len = bytes.len() as u32;
+        let len = checked_len(bytes.len())?;
         let offset = var_int::encode(len, buf)?;
 
         if buf.len() - offset < bytes.len() {
@@ -227,7 +235,7 @@ impl ToBytes for Cow<'_, str> {
 
     #[inline]
     fn byte_len(&self) -> Option<usize> {
-        Some(var_int::len(self.len() as u32) + self.len())
+        Some(var_int::len(checked_len(self.len()).ok()?) + self.len())
     }
 }
 
@@ -249,7 +257,7 @@ where
     #[inline]
     fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, BytesError> {
         let slice: &[T] = self.as_ref();
-        let len = slice.len() as u32;
+        let len = checked_len(slice.len())?;
         let mut offset = var_int::encode(len, buf)?;
         for item in slice {
             offset += item.to_bytes(&mut buf[offset..])?;
@@ -260,7 +268,7 @@ where
     #[inline]
     fn byte_len(&self) -> Option<usize> {
         let slice: &[T] = self.as_ref();
-        let mut total = var_int::len(slice.len() as u32);
+        let mut total = var_int::len(checked_len(slice.len()).ok()?);
         for item in slice {
             total += item.byte_len()?;
         }

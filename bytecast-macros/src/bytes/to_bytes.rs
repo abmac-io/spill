@@ -1,6 +1,9 @@
 //! ToBytes derive macro implementation.
 
-use super::{disc_capacity, has_boxed_attr, has_skip_attr, repr_int_type, serializable_type};
+use super::{
+    disc_capacity, field_type_bounds, has_boxed_attr, has_skip_attr, reject_enum_field_attrs,
+    repr_int_type, resolve_discriminants, serializable_type, validate_struct_field_attrs,
+};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -17,19 +20,27 @@ pub fn derive_to_bytes(input: TokenStream) -> TokenStream {
 
 fn derive_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
-    let generics = &input.generics;
+    let mut generics = input.generics.clone();
+    let extra_bounds = field_type_bounds(input, syn::parse_quote!(bytecast::ToBytes))?;
+    if !extra_bounds.is_empty() {
+        generics.make_where_clause().predicates.extend(extra_bounds);
+    }
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let (body, byte_len_body, max_size_body) = match &input.data {
-        Data::Struct(data) => (
-            generate_struct(&data.fields),
-            generate_byte_len_struct(&data.fields),
-            generate_max_size_struct(&data.fields),
-        ),
+        Data::Struct(data) => {
+            validate_struct_field_attrs(&data.fields)?;
+            (
+                generate_struct(&data.fields),
+                generate_byte_len_struct(&data.fields),
+                generate_max_size_struct(&data.fields)?,
+            )
+        }
         Data::Enum(data) => {
             let disc_ident = validate_enum(input, data)?;
+            let disc_values = resolve_discriminants(data)?;
             (
-                generate_enum(data, &disc_ident),
+                generate_enum(data, &disc_ident, &disc_values),
                 generate_byte_len_enum(data, &disc_ident),
                 generate_max_size_enum(data, &disc_ident),
             )
@@ -75,6 +86,7 @@ fn validate_enum(input: &DeriveInput, data: &syn::DataEnum) -> syn::Result<syn::
             ),
         ));
     }
+    reject_enum_field_attrs(data)?;
     Ok(disc_ident)
 }
 
@@ -143,19 +155,19 @@ fn generate_byte_len_struct(fields: &Fields) -> TokenStream2 {
     quote! { Some(0 #(+ #lens)*) }
 }
 
-fn generate_max_size_struct(fields: &Fields) -> TokenStream2 {
+fn generate_max_size_struct(fields: &Fields) -> syn::Result<TokenStream2> {
     let fields = active_fields(fields);
     if fields.is_empty() {
-        return quote! { Some(0) };
+        return Ok(quote! { Some(0) });
     }
     let sizes: Vec<_> = fields
         .iter()
         .map(|&(_, f)| {
-            let ty = serializable_type(f);
-            quote! { <#ty as bytecast::ToBytes>::MAX_SIZE }
+            let ty = serializable_type(f)?;
+            Ok(quote! { <#ty as bytecast::ToBytes>::MAX_SIZE })
         })
-        .collect();
-    quote! {
+        .collect::<syn::Result<_>>()?;
+    Ok(quote! {
         {
             const fn compute_max_size() -> Option<usize> {
                 let mut total = 0usize;
@@ -169,19 +181,23 @@ fn generate_max_size_struct(fields: &Fields) -> TokenStream2 {
             }
             compute_max_size()
         }
-    }
+    })
 }
 
-fn generate_enum(data: &syn::DataEnum, disc_type: &syn::Ident) -> TokenStream2 {
+fn generate_enum(
+    data: &syn::DataEnum,
+    disc_type: &syn::Ident,
+    disc_values: &[i128],
+) -> TokenStream2 {
     let match_arms: Vec<_> = data
         .variants
         .iter()
-        .enumerate()
-        .map(|(idx, variant)| {
+        .zip(disc_values)
+        .map(|(variant, &disc_val)| {
             let variant_name = &variant.ident;
-            let idx_lit = syn::LitInt::new(&idx.to_string(), proc_macro2::Span::call_site());
+            let disc_lit = syn::LitInt::new(&disc_val.to_string(), proc_macro2::Span::call_site());
             let disc_write = quote! {
-                let written = bytecast::ToBytes::to_bytes(&(#idx_lit as #disc_type), &mut buf[offset..])?;
+                let written = bytecast::ToBytes::to_bytes(&(#disc_lit as #disc_type), &mut buf[offset..])?;
                 offset += written;
             };
 
